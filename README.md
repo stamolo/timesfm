@@ -54,5 +54,5 @@ Paper:
 
 Code:
 - TimesFM ([https://github.com/google-research/timesfm](https://github.com/google-research/timesfm))
-- RevIN ([https://github.com/ts-kim/RevIN](https://github.com/ts-kim/RevIN))
+- RevIN (ICLR 2022) - Official PyTorch Implementation ([https://github.com/ts-kim/RevIN](https://github.com/ts-kim/RevIN))
 - minGPT ([https://github.com/karpathy/minGPT](https://github.com/karpathy/minGPT))
