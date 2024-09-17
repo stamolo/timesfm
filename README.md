@@ -46,3 +46,13 @@ With the forecast results for the four data, the model makes a forecast for the 
 		</tr>
 	</tbody>
 </table>
+
+## References
+Paper:
+- TimesFM ([https://arxiv.org/abs/2310.10688](https://arxiv.org/abs/2310.10688))
+- RevIN ([https://openreview.net/forum?id=cGDAkQo1C0p](https://openreview.net/forum?id=cGDAkQo1C0p))
+
+Code:
+- TimesFM ([https://github.com/google-research/timesfm](https://github.com/google-research/timesfm))
+- RevIN ([https://github.com/ts-kim/RevIN](https://github.com/ts-kim/RevIN))
+- minGPT ([https://github.com/karpathy/minGPT](https://github.com/karpathy/minGPT))
