@@ -37,12 +37,12 @@ With the forecast results for the four data, the model makes a forecast for the 
 <table>
 	<tbody>
 		<tr>
-			<td><img src="./plots/(x-c)xsin(x).png"></td>
-			<td><img src="./plots/min(sin(x),sin(cx))+cos.png"></td>
+			<td><img src="./plots/(x-c)xsin(x).png" width=300></td>
+			<td><img src="./plots/min(sin(x),sin(cx))+cos.png" width=300></td>
 		</tr>
 		<tr>
-			<td><img src="./plots/min(sin(x),sin(cx))+d.png"></td>
-			<td><img src="./plots/mixture_of_5_sines.png"></td>
+			<td><img src="./plots/min(sin(x),sin(cx))+d.png" width=300></td>
+			<td><img src="./plots/mixture_of_5_sines.png" width=300></td>
 		</tr>
 	</tbody>
 </table>
