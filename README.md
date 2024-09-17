@@ -28,7 +28,7 @@ To evaluate, execute the following commands:
 python eval.py --data [DATA_PATH] --load_weights_folder [LOAD_WEIGHTS_FOLDER] --start_point [START_POINT] --forecast_len [FORECAST_LEN]
 ```
 The `--data` option specifies the file path of the data to be forecasted.
-The `--start_point` option specifies from which index to start forecasting; `forecast_len` specifies how many forecasts to make ahead.
+The `--start_point` option specifies from which index to start forecasting; `--forecast_len` specifies how many forecasts to make ahead.
 `--load_weights_folder` specifies the weights folder of the trained model.
 
 ## Result
