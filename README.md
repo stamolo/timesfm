@@ -33,3 +33,16 @@ The `--start_point` option specifies from which index to start forecasting; `--f
 
 ## Result
 With the forecast results for the four data, the model makes a forecast for the next patch_len using only the data before the black line. It then uses that prediction as input for the next prediction. Therefore, these forecasts do not include any ground truth values after the black line.
+
+<table>
+	<tbody>
+		<tr>
+			<td><img src="./plots/(x-c)xsin(x).png"></td>
+			<td><img src="./plots/min(sin(x),sin(cx))+cos.png"></td>
+		</tr>
+		<tr>
+			<td><img src="./plots/min(sin(x),sin(cx))+d.png"></td>
+			<td><img src="./plots/mixture_of_5_sines.png"></td>
+		</tr>
+	</tbody>
+</table>
