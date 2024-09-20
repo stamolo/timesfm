@@ -1,7 +1,7 @@
 # Simple implementation of TimesFM
 ## Description
 This code is **not official** TimesFM implementation.
-Times FM is a Transformer decoder-based forecasting model for time-series data, introduced in "[A decoder-only foundation model for time-series forecasting](https://arxiv.org/abs/2310.10688)".
+TimesFM is a Transformer decoder-based forecasting model for time-series data, introduced in "[A decoder-only foundation model for time-series forecasting](https://arxiv.org/abs/2310.10688)".
 
 The actual TimesFM model is trained on large time-series data and is designed to handle a variety of different time-series data in zero-shot.
 However, this implementation is simply training with a few time-series data. And, although `output_patch_len` was set to `128` in the paper, for understandability, it is set to `32`, the same as `input_patch_len`.
