@@ -1,6 +1,6 @@
-# Simple implementation of Times FM
+# Simple implementation of TimesFM
 ## Description
-This code is **not official** Times FM implementation.
+This code is **not official** TimesFM implementation.
 Times FM is a Transformer decoder-based forecasting model for time-series data, introduced in "[A decoder-only foundation model for time-series forecasting](https://arxiv.org/abs/2310.10688)".
 
 The actual TimesFM model is trained on large time-series data and is designed to handle a variety of different time-series data in zero-shot.
