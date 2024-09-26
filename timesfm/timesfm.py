@@ -6,7 +6,6 @@ import numpy as np
 
 to_np = lambda x: x.detach().cpu().numpy()
 
-# Swish 活性化関数の定義
 class Swish(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x * torch.sigmoid(x)
@@ -14,46 +13,33 @@ class Swish(nn.Module):
 class ResidualBlock(nn.Module):
     def __init__(self, input_dims: int, hidden_dims: int, output_dims: int,
                  dropout_prob: float = 0.0, layer_norm: bool = False):
-        """
-        :param input_dims: 入力次元数
-        :param hidden_dims: 隠れ層次元数
-        :param output_dims: 出力次元数
-        :param dropout_prob: ドロップアウト確率
-        :param layer_norm: レイヤーノーマライゼーションを使用するかどうか
-        """
         super(ResidualBlock, self).__init__()
+        
         self.layer_norm = layer_norm
 
-        # 隠れ層
         self.hidden_layer = nn.Sequential(
             nn.Linear(input_dims, hidden_dims),
-            Swish()  # Swish 活性化関数
+            Swish()
         )
         
-        # 出力層
         self.output_layer = nn.Sequential(
             nn.Linear(hidden_dims, output_dims),
-            nn.Dropout(dropout_prob)  # ドロップアウト
+            nn.Dropout(dropout_prob)
         )
         
-        # 残差接続
         self.residual_layer = nn.Linear(input_dims, output_dims)
 
-        # レイヤーノーマライゼーション
         if layer_norm:
             self.ln_layer = nn.LayerNorm(output_dims)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # 隠れ層を通す
+
         hidden = self.hidden_layer(x)
         
-        # 出力層を通す
         output = self.output_layer(hidden)
-        
-        # 残差接続
+    
         residual = self.residual_layer(x)
         
-        # レイヤーノーマライゼーションが必要なら適用
         if self.layer_norm:
             return self.ln_layer(output + residual)
         else:

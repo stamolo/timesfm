@@ -23,9 +23,9 @@ class CausalSelfAttention(nn.Module):
     def forward(self, x):
         B, T, E = x.size()
         q, k, v = self.linear_proj(x).chunk(3, dim=2)
-        k = k.view(B, T, self.n_head, E // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        q = q.view(B, T, self.n_head, E // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        v = v.view(B, T, self.n_head, E // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        k = k.view(B, T, self.n_head, E // self.n_head).transpose(1, 2)
+        q = q.view(B, T, self.n_head, E // self.n_head).transpose(1, 2)
+        v = v.view(B, T, self.n_head, E // self.n_head).transpose(1, 2)
 
         attn = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
         attn = attn.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
