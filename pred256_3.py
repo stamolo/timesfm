@@ -17,9 +17,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_CSV_SEP = ";"
 DEFAULT_CSV_DECIMAL = ","
 DEFAULT_INPUT_CSV = r"H:\Py\fm\test_sps\test2sps.csv"
-DEFAULT_MODEL_PATH = r"G:\models\checkpoints_k\0120\epoch_0003_scripted.pt"
+DEFAULT_MODEL_PATH = r"G:\models\checkpoints_k\0120\epoch_0020_scripted.pt"
+#DEFAULT_MODEL_PATH = r"G:\models\epoch_0762_scripted.pt"
 
-# Обновленная конфигурация для инференса (без дискретного эмбеддинга)
 CONFIG = {
     "INPUT_LENGTH": 1200,
     "OUTPUT_LENGTH": 1100,

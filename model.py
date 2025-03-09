@@ -21,21 +21,7 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:, :x.size(1)]
         return self.dropout(x)
 
-# 2. Модуль внимания для объединения эмбеддингов по признакам (без изменений)
-class FeatureAttentionFusion(nn.Module):
-    def __init__(self, num_features: int, embed_dim: int):
-        super(FeatureAttentionFusion, self).__init__()
-        self.attention = nn.MultiheadAttention(embed_dim, num_heads=1, batch_first=True)
-
-    def forward(self, x: Tensor) -> Tensor:
-        B, seq_len, num_features, embed_dim = x.shape
-        x_reshaped = x.view(B * seq_len, num_features, embed_dim)
-        attn_output, _ = self.attention(x_reshaped, x_reshaped, x_reshaped)
-        fused = attn_output.mean(dim=1)  # (B*seq_len, embed_dim)
-        fused = fused.view(B, seq_len, embed_dim)
-        return fused
-
-# 3. Базовый модуль трансформера (без поддержки дискретного эмбеддинга)
+# 2. Базовый модуль трансформера (без поддержки дискретного эмбеддинга)
 class _SingleTransformerTimeSeriesModel(nn.Module):
     def __init__(self, input_channels: int, num_classes: int, config: dict):
         super(_SingleTransformerTimeSeriesModel, self).__init__()
@@ -67,7 +53,7 @@ class _SingleTransformerTimeSeriesModel(nn.Module):
         center_end = center_start + self.output_length
         return logits[:, center_start:center_end, :]
 
-# 4. Основная модель с поддержкой каскадного режима
+# 3. Основная модель с поддержкой каскадного режима
 class TransformerTimeSeriesModel(nn.Module):
     def __init__(self, input_channels: int, num_classes: int, config: dict):
         super(TransformerTimeSeriesModel, self).__init__()
