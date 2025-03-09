@@ -1,23 +1,27 @@
 import torch
 from torch.utils.data import TensorDataset, DataLoader
 from data_utils import load_and_prepare_data
+import logging
+
+logger = logging.getLogger(__name__)
 
 
-def create_datasets(config):
-    """
-    Загружает данные, подготавливает датасеты и DataLoader'ы,
-    а также возвращает скейлер, число признаков и обучающий датасет.
-    """
-    # Загрузка данных (обучающая выборка)
+def create_datasets(config: dict) -> tuple:
+    logger.info("Создание датасетов с конфигурацией: %s", config)
+    # Загрузка данных для обучающего набора
     (X_train, y_train), _, _, scaler, num_features = load_and_prepare_data(
         config["TRAIN_CSV"], config, dataset_type="train"
     )
-    # Загрузка данных (валидация и тест)
-    _, (X_val, y_val), (X_test, y_test), _, _ = load_and_prepare_data(
+    logger.info("Обучающие данные: X shape %s, y shape %s", X_train.shape, y_train.shape)
+
+    # Загрузка данных для валидации и теста
+    _, (X_val, y_val), (X_test, y_test), scaler, _ = load_and_prepare_data(
         config["VAL_TEST_CSV"], config, scaler=scaler, dataset_type="val"
     )
+    logger.info("Валидационные данные: X shape %s, y shape %s", X_val.shape, y_val.shape)
+    logger.info("Тестовые данные: X shape %s, y shape %s", X_test.shape, y_test.shape)
 
-    # Приведение данных к нужным типам (в данном случае всегда FloatTensor для X и LongTensor для y)
+    # Приведение данных к нужным типам
     X_train_t = torch.FloatTensor(X_train)
     X_val_t = torch.FloatTensor(X_val)
     X_test_t = torch.FloatTensor(X_test)
@@ -35,4 +39,5 @@ def create_datasets(config):
     val_loader = DataLoader(val_dataset, batch_size=config["BATCH_SIZE"], shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=config["BATCH_SIZE"], shuffle=False)
 
+    logger.info("Датасеты и DataLoader'ы созданы")
     return train_loader, val_loader, test_loader, scaler, num_features, train_dataset

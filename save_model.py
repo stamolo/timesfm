@@ -1,20 +1,25 @@
-import os
 import torch
+import logging
 
-def save_checkpoint(model, path):
+logger = logging.getLogger(__name__)
+
+def save_checkpoint(model: torch.nn.Module, path: str) -> None:
     """
     Сохраняет веса модели в указанный файл.
     """
-    torch.save(model.state_dict(), path)
-    print(f"Checkpoint сохранён: {path}")
+    try:
+        torch.save(model.state_dict(), path)
+        logger.info("Checkpoint сохранён: %s", path)
+    except Exception as e:
+        logger.error("Ошибка при сохранении чекпоинта: %s", e)
 
-def save_traced_model(model, path):
+def save_traced_model(model: torch.nn.Module, path: str) -> None:
     """
-    Пытается сохранить через scripting.
+    Пытается сохранить модель через scripting.
     """
     try:
         scripted_model = torch.jit.script(model)
         torch.jit.save(scripted_model, path)
-        print(f"Scripted модель сохранена: {path}")
-    except Exception as e2:
-        print("Ошибка при сохранении через scripting:", "e2")
+        logger.info("Scripted модель сохранена: %s", path)
+    except Exception as e:
+        logger.error("Ошибка при сохранении через scripting: %s", e)
