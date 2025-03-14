@@ -34,7 +34,7 @@ for schema, table in tables:
 
     # Если представление уже существует, удаляем его
     drop_view_script = f"""
-    IF OBJECT_ID('{full_view_name}', 'V') IS NOT NULL
+    IF OBJECT_ID('{full_view_name}', 'V4') IS NOT NULL
         DROP VIEW {full_view_name};
     """
     cursor.execute(drop_view_script)

@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_CSV_SEP = ";"
 DEFAULT_CSV_DECIMAL = ","
 
-#DEFAULT_INPUT_CSV = r"H:\Py\fm\dataset\4\t_2111610a23aa4f3ab46373dbb4ffecb6.csv"
-DEFAULT_INPUT_CSV = r"H:\Py\fm\test_sps\test2sps_1200_1.csv"
+DEFAULT_INPUT_CSV = r"H:\Py\fm\dataset\4\t_2111610a23aa4f3ab46373dbb4ffecb6.csv"
+#DEFAULT_INPUT_CSV = r"H:\Py\fm\test_sps\test2sps_1200_1.csv"
 
 DEFAULT_MODEL_PATH = r"G:\models\checkpoints_k\0186\epoch_0143_scripted.pt"
 #DEFAULT_MODEL_PATH = r"G:\models\epoch_0762_scripted.pt"
