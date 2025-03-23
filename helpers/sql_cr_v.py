@@ -1,7 +1,7 @@
 import pyodbc
 
 # Параметры подключения
-server = 'DESKTOP-1CK097D\\SQL_VER_16;'
+server = 'DESKTOP-1CK097D\\SQL_VER_16'
 database = 'MeretoyahaRV'
 username = 'sa'
 password = '123456'
@@ -15,11 +15,11 @@ conn = pyodbc.connect(conn_str)
 cursor = conn.cursor()
 
 # Запрос для получения списка таблиц, начинающихся на "t_"
-query_tables = """
+query_tables = r"""
 SELECT TABLE_SCHEMA, TABLE_NAME 
 FROM INFORMATION_SCHEMA.TABLES
 WHERE TABLE_TYPE = 'BASE TABLE'
-  AND TABLE_NAME LIKE 't\_%' ESCAPE '\\'
+  AND TABLE_NAME LIKE 't\_%' ESCAPE '\'
 ORDER BY TABLE_SCHEMA, TABLE_NAME;
 """
 
@@ -34,7 +34,7 @@ for schema, table in tables:
 
     # Если представление уже существует, удаляем его
     drop_view_script = f"""
-    IF OBJECT_ID('{full_view_name}', 'V4') IS NOT NULL
+    IF OBJECT_ID('{full_view_name}', 'V') IS NOT NULL
         DROP VIEW {full_view_name};
     """
     cursor.execute(drop_view_script)
@@ -44,10 +44,13 @@ for schema, table in tables:
     create_view_script = f"""
     CREATE VIEW {full_view_name} AS
     SELECT TOP 100 PERCENT
-          ROUND([28], 3) AS Вес_на_крюке_28,
+          [204] AS Время_204,
+          ROUND([28]/9806, 3) AS Вес_на_крюке_28,
           ROUND([103], 3) AS Высота_крюка_103,
-          ROUND([18], 3) AS Давление_на_входе_18,
-          ROUND([72], 3) AS Обороты_ротора_72
+          ROUND([18]/101325, 3) AS Давление_на_входе_18,
+          ROUND([72]/9.54, 3) AS Обороты_ротора_72,
+          ROUND([35], 3) AS Глубина_долота_35,
+          ROUND([36], 3) AS Глубина_забоя_36
     FROM {full_table_name}
     ORDER BY [204];
     """

@@ -25,7 +25,7 @@ from messaging import send_message, send_photo
 CONFIG: dict[str, Any] = {
     "INPUT_LENGTH": 1200,
     "OUTPUT_LENGTH": 1100,
-    "WINDOW_STEP": 30,
+    "WINDOW_STEP": 900,
     "CASCADE": False,
     "BATCH_SIZE": 64,
     "TRAIN_CSV": "dataset\\train_kl.csv",
