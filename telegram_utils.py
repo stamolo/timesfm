@@ -1,3 +1,4 @@
+import os
 import telegram
 import logging
 from typing import Optional
@@ -5,9 +6,14 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 TELEGRAM_SETTINGS = {
-    "TOKEN": "7990774098:AAGBVNNdJdIgIBLA22-4b6ojHnYhNGW7OO8",
-    "CHAT_ID": "1710874541"
+    "TOKEN": os.getenv("TELEGRAM_TOKEN"),
+    "CHAT_ID": os.getenv("TELEGRAM_CHAT_ID"),
 }
+
+if not TELEGRAM_SETTINGS["TOKEN"] or not TELEGRAM_SETTINGS["CHAT_ID"]:
+    raise ValueError(
+        "Environment variables TELEGRAM_TOKEN and TELEGRAM_CHAT_ID must be set"
+    )
 
 def get_bot_instance() -> telegram.Bot:
     """

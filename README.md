@@ -12,6 +12,20 @@ The main parts of this implementation are the prediction of patched time-series 
 
 Revin, proposed in "[Reversible instance normalization for accurate time-series forecasting against distribution shift](https://openreview.net/forum?id=cGDAkQo1C0p)". It is a simple and useful method to deal with the distribution shift problem.
 
+## Setup
+
+Install the dependencies using pip:
+
+```bash
+pip install -r requirements.txt
+```
+
+Before running scripts that interact with Telegram, set the following environment variables:
+
+* `TELEGRAM_TOKEN` – bot token
+* `TELEGRAM_CHAT_ID` – chat identifier
+
+
 ## Usage
 ### Training
 Run `train.py`. This is a training with data from the 4 sine functions contained in the `datas` folder.
