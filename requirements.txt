@@ -1,0 +1,8 @@
+numpy
+pandas
+scikit-learn
+matplotlib
+torch
+torchinfo
+tqdm
+python-telegram-bot>=20
