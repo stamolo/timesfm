@@ -12,14 +12,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # Импорт модульных функций из ранее вынесённых файлов:
-from model import TransformerTimeSeriesModel
-from save_model import save_checkpoint, save_traced_model
-from pre_save import save_script_copy, save_model_script, save_scaler
-from create_dataset import create_datasets
-from label_stats import print_label_statistics
-from calc_weights import calculate_class_weights
-from plot_results import plot_classification_results_with_labels
-from messaging import send_message, send_photo
+from utils.model import TransformerTimeSeriesModel
+from utils.save_model import save_checkpoint, save_traced_model
+from utils.pre_save import save_script_copy, save_model_script, save_scaler
+from utils.create_dataset import create_datasets
+from utils.label_stats import print_label_statistics
+from utils.calc_weights import calculate_class_weights
+from utils.plot_results import plot_classification_results_with_labels
+from utils.messaging import send_message, send_photo
 
 # Конфигурация
 CONFIG: dict[str, Any] = {

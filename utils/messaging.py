@@ -1,7 +1,7 @@
 import os
 import asyncio
 import logging
-from telegram_utils import send_telegram_message, send_telegram_photo
+from utils.telegram_utils import send_telegram_message, send_telegram_photo
 
 logger = logging.getLogger(__name__)
 

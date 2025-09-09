@@ -1,6 +1,6 @@
 import torch
 from torch.utils.data import TensorDataset, DataLoader
-from data_utils import load_and_prepare_data
+from utils.data_utils import load_and_prepare_data
 import logging
 
 logger = logging.getLogger(__name__)

@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import pickle
 import logging
-from data_utils import load_csv_data, scale_data, create_segments, predict_segments
+from utils.data_utils import load_csv_data, scale_data, create_segments, predict_segments
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
