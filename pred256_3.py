@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_CSV_SEP = ";"
 DEFAULT_CSV_DECIMAL = ","
 
-DEFAULT_INPUT_CSV = r"H:\Py\fm\dataset\4\v4_t_512c5869be1c40d28a83c4a0a2a5e416.csv"
+DEFAULT_INPUT_CSV = r"C:\Users\Александр\PycharmProjects\timesfm\dataset\4\v4_t_512c5869be1c40d28a83c4a0a2a5e416.csv"
 #DEFAULT_INPUT_CSV = r"H:\Py\fm\test_sps\test2sps_1200_1.csv"
 
-DEFAULT_MODEL_PATH = r"G:\models\checkpoints_k\0186\epoch_0143_scripted.pt"
+DEFAULT_MODEL_PATH = r"D:\models\checkpoints_k\best_model.pt"
 #DEFAULT_MODEL_PATH = r"G:\models\epoch_0762_scripted.pt"
 
 CONFIG = {
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Скрипт для разметки данных с помощью предобученной модели.")
     parser.add_argument("--model", type=str, default=DEFAULT_MODEL_PATH, help="Путь к модели (TorchScript)")
     parser.add_argument("--csv", type=str, default=DEFAULT_INPUT_CSV, help="Путь к входному CSV")
-    parser.add_argument("--output", type=str, required=True, help="Путь к выходному CSV")
+    parser.add_argument("--output", type=str, required=True, help="Путь к выходному файлу или директории")
     parser.add_argument("--segment_length", type=int, default=CONFIG["INPUT_LENGTH"], help="Длина сегмента")
     parser.add_argument("--output_length", type=int, default=CONFIG["OUTPUT_LENGTH"], help="Длина центрального участка")
     parser.add_argument("--sep", type=str, default=DEFAULT_CSV_SEP, help="Разделитель CSV")
@@ -89,9 +89,24 @@ if __name__ == "__main__":
     parser.add_argument("--scaler", type=str, default=None, help="Путь к scaler (pickle)")
     args = parser.parse_args()
 
+    # --- FIX START ---
+    # Проверяем, является ли указанный путь --output директорией.
+    # Если да, то создаём имя файла внутри этой директории.
+    output_path = args.output
+    if os.path.isdir(output_path):
+        # Берём имя входного файла (например, "test1sps.csv")
+        base_name = os.path.basename(args.csv)
+        # Создаём новое имя (например, "test1sps_predicted.csv")
+        file_name, file_ext = os.path.splitext(base_name)
+        output_filename = f"{file_name}_predicted{file_ext}"
+        # Соединяем путь к директории и новое имя файла
+        output_path = os.path.join(output_path, output_filename)
+        logger.info(f"Выходной путь является директорией. Результат будет сохранен в: {output_path}")
+    # --- FIX END ---
+
     process_csv(model_path=args.model,
                 csv_path=args.csv,
-                output_csv=args.output,
+                output_csv=output_path,  # Используем исправленный путь
                 segment_length=args.segment_length,
                 output_length=args.output_length,
                 sep=args.sep,
