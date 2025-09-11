@@ -17,11 +17,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_CSV_SEP = ";"
 DEFAULT_CSV_DECIMAL = ","
 
-DEFAULT_INPUT_CSV = r"C:\Users\Александр\PycharmProjects\timesfm\dataset\4\v4_t_512c5869be1c40d28a83c4a0a2a5e416.csv"
-#DEFAULT_INPUT_CSV = r"H:\Py\fm\test_sps\test2sps_1200_1.csv"
+DEFAULT_INPUT_CSV = r"C:\Users\Александр\PycharmProjects\timesfm\dataset\test_kl2.csv"
 
 DEFAULT_MODEL_PATH = r"D:\models\checkpoints_k\best_model.pt"
-#DEFAULT_MODEL_PATH = r"G:\models\epoch_0762_scripted.pt"
+
 
 CONFIG = {
     "INPUT_LENGTH": 1200,

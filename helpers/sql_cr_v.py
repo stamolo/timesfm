@@ -1,7 +1,7 @@
 import pyodbc
 
 # Параметры подключения
-server = 'DESKTOP-1CK097D\\SQL_VER_16'
+server = '10.8.0.5\\SQL_VER_16'
 database = 'MeretoyahaRV'
 username = 'sa'
 password = '123456'
@@ -48,7 +48,7 @@ for schema, table in tables:
           ROUND([28]/9806, 3) AS Вес_на_крюке_28,
           ROUND([103], 3) AS Высота_крюка_103,
           ROUND([18]/101325, 3) AS Давление_на_входе_18,
-          ROUND([72]/9.54, 3) AS Обороты_ротора_72,
+          ROUND([72]*9.54, 3) AS Обороты_ротора_72,
           ROUND([35], 3) AS Глубина_долота_35,
           ROUND([36], 3) AS Глубина_забоя_36
     FROM {full_table_name}
