@@ -9,7 +9,7 @@ DB_CONFIG = {
     "DRIVER": os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server"),
     "SERVER": os.getenv("DB_SERVER"),
     "DATABASE": os.getenv("DB_DATABASE"),
-    "VIEW_NAME": "[dbo].[v4_t_00c42aaff5f54cdeb352ae32e58260fb]",  # Имя view возвращено в конфиг
+    "VIEW_NAME": "[dbo].[v4_t_9bf1109f4ff141ac94b95b082947f387]",  # Имя view возвращено в конфиг
     "USERNAME": os.getenv("DB_USERNAME"),
     "PASSWORD": os.getenv("DB_PASSWORD")
 }

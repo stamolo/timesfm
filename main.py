@@ -29,9 +29,9 @@ from utils.messaging import send_message, send_photo
 CONFIG: dict[str, Any] = {
     "INPUT_LENGTH": 1200,
     "OUTPUT_LENGTH": 1100,
-    "WINDOW_STEP": 900,
+    "WINDOW_STEP": 300,
     "CASCADE": False,
-    "BATCH_SIZE": 32,
+    "BATCH_SIZE": 16,
     "TRAIN_CSV": "dataset\\train_kl.csv",
     "VAL_TEST_CSV": "dataset\\test_kl.csv",
     "CSV_SETTINGS": {"sep": ";", "decimal": ","},
