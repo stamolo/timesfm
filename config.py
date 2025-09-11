@@ -21,7 +21,7 @@ PIPELINE_CONFIG = {
     "MODEL_PATH": r"D:\models\checkpoints_k\best_model.pt",
 
     # Шаг 1: Выгрузка
-    "TOP_N": 500000,  # Количество записей для выгрузки (None для всех)
+    "TOP_N": 1000000,
     "SORT_COLUMN": "Время_204",
     "ALL_COLUMNS": [
         "Время_204", "Вес_на_крюке_28", "Высота_крюка_103",
@@ -31,7 +31,7 @@ PIPELINE_CONFIG = {
     "STEP_1_OUTPUT_FILE": "step_1_extracted.csv",
 
     # Шаг 2: Добавление отступов (padding)
-    "PADDING_SIZE": 50,  # Количество строк для добавления в начале и конце
+    "PADDING_SIZE": 50,
     "STEP_2_OUTPUT_FILE": "step_2_padded.csv",
 
     # Шаг 3: Предсказание
@@ -55,9 +55,36 @@ PIPELINE_CONFIG = {
     "STEP_5_OUTPUT_FILE": "step_5_with_tool_depth.csv",
 
     # Шаг 6: Расчет среднего веса по блокам состояний клиньев
-    "STEP_6_INPUT_SLIPS_COLUMN": "клинья_binary",  # Входной столбец с состоянием клиньев
-    "STEP_6_INPUT_WEIGHT_COLUMN": "Вес_на_крюке_28",  # Входной столбец с весом
-    "STEP_6_OUTPUT_AVG_WEIGHT_COLUMN": "средний_вес_по_блоку",  # Имя нового столбца
-    "STEP_6_OUTPUT_FILE": "step_6_block_average_weight.csv"  # Имя итогового файла
+    "STEP_6_INPUT_SLIPS_COLUMN": "клинья_binary",
+    "STEP_6_INPUT_WEIGHT_COLUMN": "Вес_на_крюке_28",
+    "STEP_6_OUTPUT_AVG_WEIGHT_COLUMN": "средний_вес_по_блоку",
+    "STEP_6_OUTPUT_FILE": "step_6_block_average_weight.csv",
+
+    # Шаг 7: Продвинутый сброс глубины по анализу блоков
+    # --- Условие 1: Сравнение рабочих блоков между собой ---
+    "STEP_7_PREVIOUS_BLOCKS_N": 5,
+    "STEP_7_CURRENT_BLOCKS_Z": 3,
+    "STEP_7_MIN_PREV_BLOCK_LENGTH_Y": 60,
+    "STEP_7_MIN_BLOCK_LENGTH_M": 60,
+    "STEP_7_WEIGHT_DROP_THRESHOLD_X": 10.0,
+
+    # --- Условие 2: Сравнение рабочих блоков с блоками на клиньях ---
+    # N_slips: количество ПОСЛЕДНИХ блоков на клиньях для расчета "опорного" веса
+    "STEP_7_SLIPS_BLOCKS_N": 5,
+    # R: макс. допустимое превышение текущего рабочего веса над "опорным" (в тоннах)
+    "STEP_7_MAX_WEIGHT_ABOVE_SLIPS_R": 10,
+
+    # --- Общие настройки Шага 7 ---
+    "STEP_7_OUTPUT_COLUMN": "Глубина_инструмента_финал",
+    "STEP_7_OUTPUT_FILE": "step_7_final_dataset.csv",
+    "STEP_7_BLOCKS_REPORT_FILE": "step_7_blocks_report.csv",
+
+    # Шаг 8: Расчет глубины забоя
+    # Входной столбец с финальной глубиной инструмента из Шага 7
+    "STEP_8_INPUT_TOOL_DEPTH_COLUMN": "Глубина_инструмента_финал",
+    # Имя нового столбца с расчетной глубиной забоя
+    "STEP_8_OUTPUT_BHD_COLUMN": "Глубина_забоя_расчетная",
+    # Имя итогового файла пайплайна
+    "STEP_8_OUTPUT_FILE": "step_8_final_dataset.csv"
 }
 
