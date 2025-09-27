@@ -9,7 +9,7 @@ DB_CONFIG = {
     "DRIVER": os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server"),
     "SERVER": os.getenv("DB_SERVER"),
     "DATABASE": os.getenv("DB_DATABASE"),
-    "VIEW_NAME": "[dbo].[v4_t_9bf1109f4ff141ac94b95b082947f387]",  # Имя view возвращено в конфиг
+    "VIEW_NAME": "[dbo].[v_kharyaginskoe_kha_e1_16_1]",  # Имя view возвращено в конфиг
     "USERNAME": os.getenv("DB_USERNAME"),
     "PASSWORD": os.getenv("DB_PASSWORD")
 }
@@ -44,7 +44,7 @@ PIPELINE_CONFIG = {
     # Шаг 4: Перекодирование состояний
     "STEP_4_INPUT_COLUMN": "клинья_0123",
     "STEP_4_OUTPUT_COLUMN": "клинья_binary",
-    "STEP_4_MAPPING_INITIAL": {1: 0, 3: 0},
+    "STEP_4_MAPPING_INITIAL": {1: 2, 3: 2},
     "STEP_4_MAPPING_FINAL": {0: 0, 2: 1},
     "STEP_4_OUTPUT_FILE": "step_4_final_dataset.csv",
 
@@ -62,15 +62,15 @@ PIPELINE_CONFIG = {
 
     # Шаг 7: Продвинутый сброс глубины по анализу блоков
     # --- Условие 1: Сравнение рабочих блоков между собой ---
-    "STEP_7_PREVIOUS_BLOCKS_N": 5,
-    "STEP_7_CURRENT_BLOCKS_Z": 3,
+    "STEP_7_PREVIOUS_BLOCKS_N": 30,
+    "STEP_7_CURRENT_BLOCKS_Z": 30,
     "STEP_7_MIN_PREV_BLOCK_LENGTH_Y": 60,
     "STEP_7_MIN_BLOCK_LENGTH_M": 60,
     "STEP_7_WEIGHT_DROP_THRESHOLD_X": 10.0,
 
     # --- Условие 2: Сравнение рабочих блоков с блоками на клиньях ---
     # N_slips: количество ПОСЛЕДНИХ блоков на клиньях для расчета "опорного" веса
-    "STEP_7_SLIPS_BLOCKS_N": 5,
+    "STEP_7_SLIPS_BLOCKS_N": 15,
     # R: макс. допустимое превышение текущего рабочего веса над "опорным" (в тоннах)
     "STEP_7_MAX_WEIGHT_ABOVE_SLIPS_R": 10,
 

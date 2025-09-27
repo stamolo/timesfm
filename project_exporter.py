@@ -10,26 +10,19 @@ from typing import Iterable, Set
 # --- configuration ---------------------------------------------------------
 # «Белый» список исключений: показываем в структуре, но не заходим внутрь и не включаем в контент
 DEFAULT_EXCLUDES: Set[str] = {
-    # 'README.md',
-    'dv_record_table',
-    # 'dv_core/schema_version',
-    # 'dv_core/domain',
-    # 'dv_core/repos',
-    # 'dv_core/utils',
-    # 'dv_core/quantities',
+
     '.env',
-    # '.env.example',
-    # 'package-lock.json'
+    'output',
+
 }
 
 # Чёрный список: полностью игнорируемые элементы
 DEFAULT_BLACKLIST: Set[str] = {
-    '.venv', '.idea', 'package-lock.json', 'node_modules',
+    '.venv', '.idea', 'package-lock.json', 'node_modules', 'readme.md', 'templates',
     'frontend', '.pytest_cache', '.git', '__pycache__', 'reports_ide',
-    'dv_core/pyproject.toml', 'dv_core/uow.py',
     'tests', 'venv', 'lib', 'technical_description',
     'uni.rar', 'helpers', 'requirements.txt', 'readme_comm.md',
-    'pytest.ini',
+    'pytest.ini', '!labeled_output__.xlsx',
     # 'Dockerfile.prod', 'Dockerfile',
     # 'docker-compose.yml', 'docker-compose.prod.yml',
     'tmp', 'test_sps', 'dataset'
@@ -37,8 +30,7 @@ DEFAULT_BLACKLIST: Set[str] = {
 
 DEFAULT_MAX_BYTES = 1_000_000  # 1 MiB
 STRUCTURE_HEADER = "=== PROJECT STRUCTURE ==="
-CONTENT_HEADER = "=== FILE CONTENTS ==="
-
+CONTENT_HEADER   = "=== FILE CONTENTS ==="
 
 # --- helpers ---------------------------------------------------------------
 
@@ -50,104 +42,106 @@ def is_binary(path: Path, sniff: int = 1024) -> bool:
     except Exception:
         return True
 
-
-def path_part_in_rules(path: Path, root: Path, rules: Set[str]) -> bool:
+def is_ignored(
+    relative_path_str: str,
+    component_ignore_list: Set[str],
+    fullpath_ignore_list: Set[str]
+) -> bool:
     """
-    Проверяет, есть ли хотя бы одна часть относительного пути (папка или файл)
-    в наборе правил rules. Сравнение идет на точное совпадение.
+    Оптимизированная проверка, следует ли игнорировать путь.
     """
-    try:
-        # Получаем части пути относительно корня проекта
-        # Например, для 'utils/create_dataset.py' это будет ('utils', 'create_dataset.py')
-        relative_parts = path.relative_to(root).parts
-        # Проверяем пересечение множества частей пути и множества правил
-        return not rules.isdisjoint(relative_parts)
-    except ValueError:
-        return False
-
-
-def iter_structure(
-        dir_path: Path,
-        root: Path,
-        blacklist: Set[str],
-        excludes: Set[str],
-        indent_level: int = 0
-) -> Iterable[str]:
-    """
-    Рекурсивно выводит дерево, но пропускает целиком любые
-    папки/файлы, чьи имена точно совпадают с элементами в blacklist.
-    """
-    # если этот путь (или его родительская папка) в чёрном списке — сразу выходим
-    if path_part_in_rules(dir_path, root, blacklist):
-        return
-
-    indent = '    ' * indent_level
-    name = dir_path.name if indent_level else '.'
-    yield f"{indent}{name}/"
-
-    for item in sorted(dir_path.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
-        # пропускаем по чёрному списку (точное совпадение имени)
-        if path_part_in_rules(item, root, blacklist):
-            continue
-
-        # Для файлов (не директорий) проверяем список исключений
-        if not item.is_dir() and path_part_in_rules(item, root, excludes):
-            continue
-
-        if item.is_dir():
-            yield from iter_structure(item, root, blacklist, excludes, indent_level + 1)
-        else:
-            yield f"{indent}    {item.name}"
-
+    # 1. Проверка на полное совпадение пути
+    if relative_path_str in fullpath_ignore_list:
+        return True
+    # 2. Проверка на совпадение по компонентам
+    # (создание Path объекта здесь - основная нагрузка, но это необходимо)
+    path_components = Path(relative_path_str).parts
+    for component in path_components:
+        if component in component_ignore_list:
+            return True
+    return False
 
 def dump_project(
-        root: Path,
-        out_file: Path,
-        max_bytes: int,
-        skip_binary: bool,
-        excludes: Set[str],
-        blacklist: Set[str],
+    root: Path,
+    out_file: Path,
+    max_bytes: int,
+    skip_binary: bool,
+    excludes: Set[str],
+    blacklist: Set[str],
 ):
-    """Записывает в out_file структуру и содержимое проекта."""
+    """Записывает в out_file структуру и содержимое проекта за один проход."""
     root = root.resolve()
-    with out_file.open('w', encoding='utf-8', errors='replace') as out:
-        # --- PROJECT STRUCTURE ---
-        out.write(f"{STRUCTURE_HEADER}\n")
-        for line in iter_structure(root, root, blacklist, excludes):
-            out.write(line + "\n")
-        out.write("\n\n")
 
-        # --- FILE CONTENTS ---
+    # --- Оптимизация: разделяем списки на компоненты и полные пути ---
+    blacklist_components = {item for item in blacklist if '/' not in item and '\\' not in item}
+    blacklist_fullpaths = blacklist - blacklist_components
+    excludes_components = {item for item in excludes if '/' not in item and '\\' not in item}
+    excludes_fullpaths = excludes - excludes_components
+
+    structure_lines: List[str] = []
+    content_paths: List[Path] = []
+
+    def traverse_tree(current_path: Path, indent_level: int):
+        """
+        Рекурсивно обходит дерево, одновременно собирая структуру и пути к файлам.
+        """
+        # Сортируем для консистентного вывода: сначала папки, потом файлы
+        try:
+            items = sorted(current_path.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
+        except OSError:
+            items = [] # Пропускаем недоступные директории
+
+        for item in items:
+            rel_path_str = item.relative_to(root).as_posix()
+            indent = '    ' * indent_level
+
+            if is_ignored(rel_path_str, blacklist_components, blacklist_fullpaths):
+                continue
+
+            is_excluded = is_ignored(rel_path_str, excludes_components, excludes_fullpaths)
+
+            if item.is_dir():
+                structure_lines.append(f"{indent}{item.name}/")
+                if not is_excluded:
+                    traverse_tree(item, indent_level + 1)
+            else: # Это файл
+                structure_lines.append(f"{indent}{item.name}")
+                if not is_excluded:
+                    content_paths.append(item)
+
+    # --- Основной однопроходный алгоритм ---
+    structure_lines.append("./")
+    traverse_tree(root, 1) # Начинаем обход с корневой директории
+
+    with out_file.open('w', encoding='utf-8', errors='replace') as out:
+        # --- Записываем структуру проекта ---
+        out.write(f"{STRUCTURE_HEADER}\n")
+        out.write("\n".join(structure_lines))
+        out.write("\n\n\n")
+
+        # --- Записываем содержимое файлов ---
         out.write(f"{CONTENT_HEADER}\n")
-        for path in sorted(root.rglob('*'), key=lambda p: (p.is_file(), str(p).lower())):
-            # 1) полностью игнорируем, если часть пути в чёрном списке
-            if path_part_in_rules(path, root, blacklist):
+        for path in content_paths:
+            # 1) Пропускаем сам выходной файл (дополнительная проверка)
+            if path.resolve() == out_file.resolve():
                 continue
-            # 2) пропускаем каталоги
-            if path.is_dir():
-                continue
-            # 3) если часть пути в списке excludes — не пишем контент
-            if path_part_in_rules(path, root, excludes):
-                continue
-            # 4) ограничение по размеру
+            # 2) Ограничение по размеру
             try:
-                size = path.stat().st_size
+                if path.stat().st_size > max_bytes:
+                    continue
             except Exception:
                 continue
-            if size > max_bytes:
-                continue
-            # 5) бинарные (опционально)
+            # 3) Бинарные файлы (опционально)
             if skip_binary and is_binary(path):
                 continue
 
-            rel = path.relative_to(root).as_posix()
-            out.write(f"### {rel}\n")
+            rel_str = path.relative_to(root).as_posix()
+            out.write(f"### {rel_str}\n")
             try:
                 out.write(path.read_text(encoding='utf-8', errors='replace'))
             except Exception as exc:
                 out.write(f"<error reading file: {exc}>\n")
             out.write("\n\n")
-
 
 # --- CLI -------------------------------------------------------------------
 
@@ -166,15 +160,13 @@ def parse_args():
                         help='Дополнительные директории/файлы, которые выводить в структуре, но не включать в контент')
     return parser.parse_args()
 
-
 def main():
     args = parse_args()
     script_name = Path(__file__).name
-    output_name = args.output.name
 
-    # Собираем списки: в excludes попадают DEFAULT_EXCLUDES + пользовательские + сам скрипт и выходной файл
-    all_excludes = DEFAULT_EXCLUDES.union(args.exclude, {script_name, output_name})
-    all_blacklist = DEFAULT_BLACKLIST
+    # Добавляем сам скрипт и выходной файл в черный список, чтобы они не попали в вывод
+    all_blacklist = DEFAULT_BLACKLIST.union({script_name, args.output.name})
+    all_excludes = DEFAULT_EXCLUDES.union(args.exclude)
 
     dump_project(
         args.project_root,
@@ -185,7 +177,6 @@ def main():
         all_blacklist,
     )
     print(f"Exported project to {args.output}")
-
 
 if __name__ == '__main__':
     main()

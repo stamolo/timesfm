@@ -29,9 +29,9 @@ from utils.messaging import send_message, send_photo
 CONFIG: dict[str, Any] = {
     "INPUT_LENGTH": 1200,
     "OUTPUT_LENGTH": 1100,
-    "WINDOW_STEP": 300,
+    "WINDOW_STEP": 500,
     "CASCADE": False,
-    "BATCH_SIZE": 16,
+    "BATCH_SIZE": 64,
     "TRAIN_CSV": "dataset\\train_kl.csv",
     "VAL_TEST_CSV": "dataset\\test_kl.csv",
     "CSV_SETTINGS": {"sep": ";", "decimal": ","},
@@ -53,7 +53,7 @@ CONFIG: dict[str, Any] = {
         2: {"min": -25, "max": 300},
         3: {"min": -25, "max": 280},
     },
-    "USE_FP16": True,
+    "USE_FP16": False,
 }
 
 # Директория для сохранения чекпоинтов (используем raw string для надежности)
