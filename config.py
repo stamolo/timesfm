@@ -25,8 +25,8 @@ PIPELINE_CONFIG = {
     # Если True, Шаг 1 не будет подключаться к БД, а будет использовать
     # существующий файл step_1_extracted.csv из папки output.
     # Если False, выгрузка будет производиться из БД как обычно.
-    "USE_EXISTING_STEP_1_OUTPUT": True,
-    "TOP_N": 350000,
+    "USE_EXISTING_STEP_1_OUTPUT": False,
+    "TOP_N": 1000000,
     "SORT_COLUMN": "Время_204",
     "ALL_COLUMNS": [
         "Время_204", "Вес_на_крюке_28", "Высота_крюка_103",
@@ -110,5 +110,33 @@ PIPELINE_CONFIG = {
     "STEP_10_CALCULATE_BINARY": True,
     "STEP_10_BINARY_THRESHOLD": 35.0,
     "STEP_10_BINARY_OUTPUT_COLUMN": "Над забоем, м (бинарный)",
-    "STEP_10_OUTPUT_FILE": "step_10_final_dataset.csv"
+    "STEP_10_OUTPUT_FILE": "step_10_final_dataset.csv",
+
+    # Шаг 11: Построение модели и поиск аномалий веса
+    "STEP_11_TARGET_COLUMN": "Вес_на_крюке_28",
+    "STEP_11_FEATURE_COLUMNS": [
+        "Скорость_инструмента",
+        "Скорость_инструмента_кв_знак",
+        "Глубина_долота_35",
+        "Глубина_долота_кв"
+    ],
+    "STEP_11_SLIPS_COLUMN": "клинья_0123",
+    "STEP_11_ABOVE_BHD_COLUMN": "Над забоем, м (бинарный)",
+    "STEP_11_WINDOW_SIZE_N": 1000,
+    "STEP_11_WINDOW_STEP": 10,
+    "STEP_11_ANOMALY_THRESHOLD": 15.0,
+    "STEP_11_CONSECUTIVE_ANOMALIES_MIN": 5,
+
+    # Новый параметр: Исключать из обучения все потенциальные аномалии (True)
+    # или только подтвержденные (False)
+    "STEP_11_EXCLUDE_ALL_POTENTIAL_ANOMALIES": False,
+
+    # Новые параметры: Ограничение (clipping) для предсказанного веса
+    "STEP_11_USE_PREDICTION_CLIP": True,  # Включить/выключить обрезку
+    "STEP_11_PREDICTION_MIN_CLIP": 0,  # Минимальное значение веса
+    "STEP_11_PREDICTION_MAX_CLIP": 150,  # Максимальное значение веса
+
+    "STEP_11_OUTPUT_FILE": "step_11_anomaly_detection.csv",
+    "STEP_11_PLOT_FILE": "step_11_anomaly_plot.png",
 }
+

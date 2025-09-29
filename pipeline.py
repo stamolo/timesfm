@@ -13,6 +13,7 @@ from steps.step_7_advanced_reset import run_step_7
 from steps.step_8_bottom_hole_depth import run_step_8
 from steps.step_9_derivatives import run_step_9
 from steps.step_10_above_bottom_hole import run_step_10
+from steps.step_11_anomaly_detection import run_step_11
 
 # Настройка логирования для отслеживания всего процесса
 logging.basicConfig(
@@ -41,7 +42,8 @@ def main():
         ("Шаг 7: Продвинутый сброс глубины", run_step_7),
         ("Шаг 8: Расчет глубины забоя", run_step_8),
         ("Шаг 9: Расчет производных", run_step_9),
-        ("Шаг 10: Расчет 'Над забоем'", run_step_10)
+        ("Шаг 10: Расчет 'Над забоем'", run_step_10),
+        ("Шаг 11: Поиск аномалий веса", run_step_11)
     ]
 
     try:
@@ -63,3 +65,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
