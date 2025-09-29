@@ -9,7 +9,7 @@ DB_CONFIG = {
     "DRIVER": os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server"),
     "SERVER": os.getenv("DB_SERVER"),
     "DATABASE": os.getenv("DB_DATABASE"),
-    "VIEW_NAME": "[dbo].[v_kharyaginskoe_kha_e1_16_1]",  # Имя view возвращено в конфиг
+    "VIEW_NAME": "[dbo].[v_kharyaginskoe_kha_e1_17_1]",  # Имя view возвращено в конфиг
     "USERNAME": os.getenv("DB_USERNAME"),
     "PASSWORD": os.getenv("DB_PASSWORD")
 }
@@ -18,10 +18,15 @@ DB_CONFIG = {
 PIPELINE_CONFIG = {
     # Общие
     "OUTPUT_DIR": "output",
-    "MODEL_PATH": r"D:\models\checkpoints_k\best_model.pt",
+    "MODEL_PATH": r"D:\models\checkpoints_k\best_model_kl.pt",
 
     # Шаг 1: Выгрузка
-    "TOP_N": 1000000,
+    # --- ИЗМЕНЕНИЕ ---
+    # Если True, Шаг 1 не будет подключаться к БД, а будет использовать
+    # существующий файл step_1_extracted.csv из папки output.
+    # Если False, выгрузка будет производиться из БД как обычно.
+    "USE_EXISTING_STEP_1_OUTPUT": True,
+    "TOP_N": 350000,
     "SORT_COLUMN": "Время_204",
     "ALL_COLUMNS": [
         "Время_204", "Вес_на_крюке_28", "Высота_крюка_103",
@@ -85,6 +90,25 @@ PIPELINE_CONFIG = {
     # Имя нового столбца с расчетной глубиной забоя
     "STEP_8_OUTPUT_BHD_COLUMN": "Глубина_забоя_расчетная",
     # Имя итогового файла пайплайна
-    "STEP_8_OUTPUT_FILE": "step_8_final_dataset.csv"
+    "STEP_8_OUTPUT_FILE": "step_8_final_dataset.csv",
+
+    # Шаг 9: Расчет производных (скорость и изменение веса) и квадратов
+    "STEP_9_HOOK_HEIGHT_COLUMN": "Высота_крюка_103",
+    "STEP_9_WEIGHT_COLUMN": "Вес_на_крюке_28",
+    "STEP_9_BIT_DEPTH_COLUMN": "Глубина_долота_35",
+    "STEP_9_OUTPUT_SPEED_COLUMN": "Скорость_инструмента",
+    "STEP_9_OUTPUT_WEIGHT_DELTA_COLUMN": "Изменение_веса_на_крюке",
+    "STEP_9_OUTPUT_BIT_DEPTH_SQUARED_COLUMN": "Глубина_долота_кв",
+    "STEP_9_OUTPUT_SPEED_SQUARED_COLUMN": "Скорость_инструмента_кв",
+    "STEP_9_OUTPUT_FILE": "step_9_final_with_derivatives.csv",
+
+    # Шаг 10: Расчет параметра "Над забоем" и его бинарной версии
+    "STEP_10_BHD_COLUMN": "Глубина_забоя_36",
+    "STEP_10_BIT_DEPTH_COLUMN": "Глубина_долота_35",
+    "STEP_10_OUTPUT_COLUMN": "Над забоем, м",
+    "STEP_10_CALCULATE_BINARY": True,
+    "STEP_10_BINARY_THRESHOLD": 35.0,
+    "STEP_10_BINARY_OUTPUT_COLUMN": "Над забоем, м (бинарный)",
+    "STEP_10_OUTPUT_FILE": "step_10_final_dataset.csv"
 }
 

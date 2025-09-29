@@ -41,7 +41,13 @@ def run_step_3():
         ]
         logger.info(f"Запуск команды: {' '.join(command)}")
 
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
+        # --- ИСПРАВЛЕНИЕ ---
+        # Заменена кодировка 'utf-8' на 'cp1251' и добавлен параметр errors='ignore'.
+        # Это необходимо для корректного чтения вывода дочернего процесса в среде Windows,
+        # где консоль по умолчанию использует другую кодировку (часто cp1251 или cp866).
+        # 'errors=ignore' предотвратит падение, если в выводе встретятся нераспознанные символы.
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                   encoding='cp1251', errors='ignore')
         stdout, stderr = process.communicate()
 
         logger.info("---[ Вывод скрипта pred256_3.py ]---")

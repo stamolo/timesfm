@@ -11,9 +11,26 @@ logger = logging.getLogger(__name__)
 def run_step_1():
     """
     Шаг 1: Подключение к базе данных и выгрузка данных из view.
+    Либо использование существующего файла, если включена опция.
     Возвращает True в случае успеха и False в случае ошибки.
     """
-    logger.info("---[ Шаг 1: Выгрузка данных из БД ]---")
+    logger.info("---[ Шаг 1: Выгрузка данных ]---")
+
+    # --- НОВАЯ ЛОГИКА ---
+    # Проверяем, нужно ли использовать существующий файл
+    use_existing = PIPELINE_CONFIG.get("USE_EXISTING_STEP_1_OUTPUT", False)
+    output_path = os.path.join(PIPELINE_CONFIG['OUTPUT_DIR'], PIPELINE_CONFIG['STEP_1_OUTPUT_FILE'])
+
+    if use_existing:
+        logger.info("Опция 'USE_EXISTING_STEP_1_OUTPUT' включена.")
+        if os.path.exists(output_path):
+            logger.info(f"Используется существующий файл: {output_path}")
+            return True  # Шаг успешно "выполнен"
+        else:
+            logger.error(f"Файл {output_path} не найден, но опция 'USE_EXISTING_STEP_1_OUTPUT' включена. Пайплайн остановлен.")
+            return False
+
+    # --- СТАНДАРТНАЯ ЛОГИКА ВЫГРУЗКИ ИЗ БД ---
     try:
         conn_str = (
             f"DRIVER={{{DB_CONFIG['DRIVER']}}};"
@@ -46,7 +63,6 @@ def run_step_1():
             df = pd.read_sql(query, conn)
             logger.info(f"Загружено {len(df)} строк.")
 
-        output_path = os.path.join(PIPELINE_CONFIG['OUTPUT_DIR'], PIPELINE_CONFIG['STEP_1_OUTPUT_FILE'])
         df.to_csv(output_path, index=False, sep=';', decimal=',', encoding='utf-8-sig')
         logger.info(f"Данные успешно сохранены в: {output_path}")
         return True
@@ -54,3 +70,4 @@ def run_step_1():
     except Exception as e:
         logger.error(f"Ошибка на Шаге 1: {e}", exc_info=True)
         return False
+

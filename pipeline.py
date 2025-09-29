@@ -11,6 +11,8 @@ from steps.step_5_tool_depth import run_step_5
 from steps.step_6_block_average import run_step_6
 from steps.step_7_advanced_reset import run_step_7
 from steps.step_8_bottom_hole_depth import run_step_8
+from steps.step_9_derivatives import run_step_9
+from steps.step_10_above_bottom_hole import run_step_10
 
 # Настройка логирования для отслеживания всего процесса
 logging.basicConfig(
@@ -37,7 +39,9 @@ def main():
         ("Шаг 5: Расчет начальной глубины", run_step_5),
         ("Шаг 6: Расчет среднего веса по блокам", run_step_6),
         ("Шаг 7: Продвинутый сброс глубины", run_step_7),
-        ("Шаг 8: Расчет глубины забоя", run_step_8)
+        ("Шаг 8: Расчет глубины забоя", run_step_8),
+        ("Шаг 9: Расчет производных", run_step_9),
+        ("Шаг 10: Расчет 'Над забоем'", run_step_10)
     ]
 
     try:
@@ -59,4 +63,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

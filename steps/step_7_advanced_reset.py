@@ -47,9 +47,12 @@ def run_step_7():
         logger.info("Идентификация блоков и сбор статистики...")
         df['block_id'] = (df[slips_binary_col].diff() != 0).cumsum()
 
-        block_stats = df.groupby('block_id').agg(
-            start_row=('block_id', 'idxmin'),
-            end_row=('block_id', 'idxmax'),
+        df_with_index = df.reset_index()
+
+        block_stats = df_with_index.groupby('block_id').agg(
+            # ИСПРАВЛЕНО: 'idxmin'/'idxmax' по 'block_id' заменены на 'min'/'max' по 'index'.
+            start_row=('index', 'min'),
+            end_row=('index', 'max'),
             start_time=(time_col, 'first'),
             end_time=(time_col, 'last'),
             block_length=('block_id', 'size'),
