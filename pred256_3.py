@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import pickle
 import logging
+import pandas as pd
 from utils.data_utils import load_csv_data, scale_data, create_segments, predict_segments
 
 # Настройка логирования
@@ -16,16 +17,14 @@ logger = logging.getLogger(__name__)
 # ------------------------------
 DEFAULT_CSV_SEP = ";"
 DEFAULT_CSV_DECIMAL = ","
-
-DEFAULT_INPUT_CSV = r"C:\Users\Александр\PycharmProjects\timesfm\dataset\test_kl2.csv"
-
-DEFAULT_MODEL_PATH = r"D:\models\checkpoints_k\best_model.pt"
-
+DEFAULT_INPUT_CSV = r"C:\Users\Александр\PycharmProjects\timesfm\dataset\4\17.csv"
+DEFAULT_MODEL_PATH = r"D:\models\checkpoints_k_regression\best_model_ns.pt"
 
 CONFIG = {
-    "INPUT_LENGTH": 1200,
-    "OUTPUT_LENGTH": 1100,
-    "NUM_CLASSES": 4,
+    "INPUT_LENGTH": 120,
+    "OUTPUT_LENGTH": 120,
+    "TARGET_COLUMN": 3,  # Индекс целевого столбца для его исключения из признаков
+    "FEATURE_COLUMNS": [0, 1], # Используемые признаки
     "CSV_SETTINGS": {"sep": DEFAULT_CSV_SEP, "decimal": DEFAULT_CSV_DECIMAL},
 }
 
@@ -38,17 +37,40 @@ def process_csv(model_path: str, csv_path: str, output_csv: str,
     logger.info("Используемое устройство: %s", device)
     if scaler_path is None:
         scaler_path = os.path.join(os.path.dirname(model_path), "scaler.pkl")
-    data = load_csv_data(csv_path, sep, decimal)
-    logger.info("Загружено строк: %d, признаков: %d", data.shape[0], data.shape[1])
 
-    # Всегда используем масштабирование через scaler
+    full_data = load_csv_data(csv_path, sep, decimal)
+    logger.info("Загружено строк: %d, столбцов: %d", full_data.shape[0], full_data.shape[1])
+
+    # --- Выбираем признаки для предсказания ---
+    feature_columns = CONFIG.get("FEATURE_COLUMNS")
+    if feature_columns:
+        logger.info(f"Используются указанные столбцы для предсказания: {feature_columns}")
+        max_col_index = full_data.shape[1] - 1
+        if any(col > max_col_index for col in feature_columns):
+             raise ValueError(f"Один из индексов в FEATURE_COLUMNS превышает максимальный индекс столбца ({max_col_index})")
+        data_for_prediction = full_data[:, feature_columns]
+    else:
+        # Если признаки не заданы явно, пытаемся исключить целевой столбец, как раньше
+        target_col_idx = CONFIG.get("TARGET_COLUMN", -1)
+        if target_col_idx < 0:
+            target_col_idx = full_data.shape[1] + target_col_idx
+
+        if 0 <= target_col_idx < full_data.shape[1]:
+            logger.info("FEATURE_COLUMNS не указан. Исключение целевого столбца с индексом %d из данных для предсказания.", target_col_idx)
+            feature_indices = [i for i in range(full_data.shape[1]) if i != target_col_idx]
+            data_for_prediction = full_data[:, feature_indices]
+        else:
+            logger.info("Целевой столбец не найден в данных, используются все столбцы как признаки.")
+            data_for_prediction = full_data
+
+    # --- Масштабируем только признаки ---
     if os.path.exists(scaler_path):
         with open(scaler_path, "rb") as f:
             scaler = pickle.load(f)
         logger.info("Скейлер загружен из: %s", scaler_path)
     else:
         scaler = None
-    data_prepared, scaler = scale_data(data, scaler)
+    data_prepared, _ = scale_data(data_for_prediction, scaler)
     logger.info("Данные масштабированы.")
 
     segments, seg_start_indices = create_segments(data_prepared, segment_length, step=output_length)
@@ -62,15 +84,14 @@ def process_csv(model_path: str, csv_path: str, output_csv: str,
 
     preds_segments = predict_segments(model, segments, device)
     center_offset = (segment_length - output_length) // 2
-    pred_column = np.full((data.shape[0],), np.nan)
+    pred_column = np.full((full_data.shape[0],), np.nan)
     for idx, start in enumerate(seg_start_indices):
         pred_column[start + center_offset: start + center_offset + output_length] = preds_segments[idx]
     logger.info("Предсказания объединены.")
 
-    n_features = data.shape[1]
-    import pandas as pd
-    col_names = [f"feature_{i}" for i in range(n_features)]
-    df_out = pd.DataFrame(data, columns=col_names)
+    # --- Сохраняем исходные данные + столбец предсказаний ---
+    col_names = [f"feature_{i}" for i in range(full_data.shape[1])]
+    df_out = pd.DataFrame(full_data, columns=col_names)
     df_out["predicted_label"] = pred_column
     df_out.to_csv(output_csv, index=False, sep=sep, decimal=decimal)
     logger.info("Результаты сохранены в %s", output_csv)
@@ -88,26 +109,20 @@ if __name__ == "__main__":
     parser.add_argument("--scaler", type=str, default=None, help="Путь к scaler (pickle)")
     args = parser.parse_args()
 
-    # --- FIX START ---
-    # Проверяем, является ли указанный путь --output директорией.
-    # Если да, то создаём имя файла внутри этой директории.
     output_path = args.output
     if os.path.isdir(output_path):
-        # Берём имя входного файла (например, "test1sps.csv")
         base_name = os.path.basename(args.csv)
-        # Создаём новое имя (например, "test1sps_predicted.csv")
         file_name, file_ext = os.path.splitext(base_name)
         output_filename = f"{file_name}_predicted{file_ext}"
-        # Соединяем путь к директории и новое имя файла
         output_path = os.path.join(output_path, output_filename)
         logger.info(f"Выходной путь является директорией. Результат будет сохранен в: {output_path}")
-    # --- FIX END ---
 
     process_csv(model_path=args.model,
                 csv_path=args.csv,
-                output_csv=output_path,  # Используем исправленный путь
+                output_csv=output_path,
                 segment_length=args.segment_length,
                 output_length=args.output_length,
                 sep=args.sep,
                 decimal=args.decimal,
                 scaler_path=args.scaler)
+

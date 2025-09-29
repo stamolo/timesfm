@@ -9,7 +9,7 @@ DB_CONFIG = {
     "DRIVER": os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server"),
     "SERVER": os.getenv("DB_SERVER"),
     "DATABASE": os.getenv("DB_DATABASE"),
-    "VIEW_NAME": "[dbo].[v_kharyaginskoe_kha_e1_16_1]",  # Имя view возвращено в конфиг
+    "VIEW_NAME": "[dbo].[v_kharyaginskoe_kha_e1_17_1]",  # Имя view возвращено в конфиг
     "USERNAME": os.getenv("DB_USERNAME"),
     "PASSWORD": os.getenv("DB_PASSWORD")
 }
@@ -18,10 +18,21 @@ DB_CONFIG = {
 PIPELINE_CONFIG = {
     # Общие
     "OUTPUT_DIR": "output",
-    "MODEL_PATH": r"D:\models\checkpoints_k\best_model.pt",
+    "MODEL_PATH": r"D:\models\checkpoints_k\best_model_kl.pt",
 
     # Шаг 1: Выгрузка
-    "TOP_N": 1000000,
+    # --- Вариант 1: Ограничение по количеству строк ---
+    # Используется, если фильтр по датам ниже неактивен (значения None).
+    "TOP_N": 350000,
+    "ROWS_TO_SKIP_INITIAL": 0,
+
+    # --- Вариант 2: Фильтрация по дате (имеет приоритет) ---
+    # Если указаны все три параметра, будет использоваться фильтр по дате.
+    # Чтобы отключить, установите START_DATE и END_DATE в None.
+    "DATE_FILTER_COLUMN": "Время_204",  # Столбец с датой/временем для фильтрации
+    "START_DATE": "2018-12-14 00:00:00",  # "2018-11-05 00:00:00", # Начальная дата (включая).
+    "END_DATE": "2018-12-16 23:59:59",    # "2018-11-07 23:59:59", # Конечная дата (включая).
+
     "SORT_COLUMN": "Время_204",
     "ALL_COLUMNS": [
         "Время_204", "Вес_на_крюке_28", "Высота_крюка_103",

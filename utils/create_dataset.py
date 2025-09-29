@@ -7,6 +7,10 @@ logger = logging.getLogger(__name__)
 
 
 def create_datasets(config: dict) -> tuple:
+    """
+    Создает и возвращает DataLoader'ы для обучающего, валидационного и тестового наборов,
+    а также обученный scaler и количество признаков.
+    """
     logger.info("Создание датасетов с конфигурацией: %s", config)
     # Загрузка данных для обучающего набора
     (X_train, y_train), _, _, scaler, num_features = load_and_prepare_data(
@@ -25,9 +29,9 @@ def create_datasets(config: dict) -> tuple:
     X_train_t = torch.FloatTensor(X_train)
     X_val_t = torch.FloatTensor(X_val)
     X_test_t = torch.FloatTensor(X_test)
-    y_train_t = torch.LongTensor(y_train)
-    y_val_t = torch.LongTensor(y_val)
-    y_test_t = torch.LongTensor(y_test)
+    y_train_t = torch.FloatTensor(y_train)
+    y_val_t = torch.FloatTensor(y_val)
+    y_test_t = torch.FloatTensor(y_test)
 
     # Создание TensorDataset'ов
     train_dataset = TensorDataset(X_train_t, y_train_t)
@@ -40,4 +44,7 @@ def create_datasets(config: dict) -> tuple:
     test_loader = DataLoader(test_dataset, batch_size=config["BATCH_SIZE"], shuffle=False)
 
     logger.info("Датасеты и DataLoader'ы созданы")
-    return train_loader, val_loader, test_loader, scaler, num_features, train_dataset
+
+    # === ИСПРАВЛЕНИЕ: Возвращаем 5 значений, как и ожидается в main.py ===
+    return train_loader, val_loader, test_loader, scaler, num_features
+

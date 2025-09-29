@@ -20,44 +20,46 @@ from utils.model import TransformerTimeSeriesModel
 from utils.save_model import save_checkpoint, save_traced_model
 from utils.pre_save import save_script_copy, save_model_script, save_scaler
 from utils.create_dataset import create_datasets
-from utils.label_stats import print_label_statistics
-from utils.calc_weights import calculate_class_weights
-from utils.plot_results import plot_classification_results_with_labels
+from utils.plot_results import plot_regression_results, plot_initial_dataset_check
 from utils.messaging import send_message, send_photo
 
 # Конфигурация
 CONFIG: dict[str, Any] = {
-    "INPUT_LENGTH": 1200,
-    "OUTPUT_LENGTH": 1100,
-    "WINDOW_STEP": 500,
+    "INPUT_LENGTH": 120,
+    "OUTPUT_LENGTH": 120,
+    "WINDOW_STEP": 30,
     "CASCADE": False,
     "BATCH_SIZE": 64,
-    "TRAIN_CSV": "dataset\\train_kl.csv",
-    "VAL_TEST_CSV": "dataset\\test_kl.csv",
+    "TRAIN_CSV": "dataset\\train_ns_kl_pred.csv",
+    "VAL_TEST_CSV": "dataset\\test_ns_kl_pred.csv",
     "CSV_SETTINGS": {"sep": ";", "decimal": ","},
-    "EMBED_SIZE": 32,
+    "TARGET_COLUMN": 4,  # Индекс столбца, который нужно предсказывать (-1 = последний)
+    # === ИЗМЕНЕНИЕ: Добавлен список столбцов для использования в качестве признаков ===
+    # Если список пуст или None, используются все столбцы, кроме TARGET_COLUMN
+    "FEATURE_COLUMNS": [0, 1],
+    # =========================================================================
+    "EMBED_SIZE": 64,
     "NHEAD": 4,
     "NUM_LAYERS": 6,
-    "DIM_FEEDFORWARD": 128,
+    "DIM_FEEDFORWARD": 256,
     "DROPOUT": 0.1,
     "NUM_EPOCHS": 5000,
-    "LR": 0.00025,
-    "NUM_CLASSES": 4,
-    "USE_CLASS_WEIGHTS": False,
-    "KEEP_TOP_N_EPOCHS": 4,
+    "LR": 0.0005,
+
+    "KEEP_TOP_N_EPOCHS": 40,
     "COLORS": {"train": "#1f77b4", "validation": "#2ca02c", "test": "#d62728"},
     "FORCE_FEATURE_SCALING": True,
     "FORCED_FEATURE_BOUNDS": {
         0: {"min": -25, "max": 300},
         1: {"min": -25, "max": 40},
-        2: {"min": -25, "max": 300},
-        3: {"min": -25, "max": 280},
+        # 2: {"min": -25, "max": 40},
+        # 3: {"min": -25, "max": 40},
     },
-    "USE_FP16": False,
+    "USE_FP16": True,
 }
 
 # Директория для сохранения чекпоинтов (используем raw string для надежности)
-BASE_CHECKPOINT_DIR: str = r"D:\models\checkpoints_k"
+BASE_CHECKPOINT_DIR: str = r"D:\models\checkpoints_k_regression"
 os.makedirs(BASE_CHECKPOINT_DIR, exist_ok=True)
 
 
@@ -79,25 +81,23 @@ def train_one_epoch(
         config: dict[str, Any],
         use_fp16: bool = False,
         scaler_amp: Optional[torch.cuda.amp.GradScaler] = None
-) -> Tuple[float, float]:
+) -> float:
     """
     Обучает модель за одну эпоху.
-    Возвращает среднюю потерю и точность за эпоху.
+    Возвращает среднюю потерю за эпоху.
     """
     model.train()
     total_loss = 0.0
-    total_correct = 0
-    total_samples = 0
 
     batch_bar = tqdm(train_loader, desc="Training Batches", leave=True, dynamic_ncols=True)
-    for X, y in batch_bar:
+    for i, (X, y) in enumerate(batch_bar):
         X, y = X.to(device), y.to(device)
         optimizer.zero_grad()
         y_central = get_central_slice(y, config)
 
         with torch.amp.autocast(device_type=device.type, dtype=torch.float16, enabled=use_fp16):
-            logits = model(X)
-            loss = criterion(logits.reshape(-1, config["NUM_CLASSES"]), y_central.reshape(-1))
+            output = model(X)
+            loss = criterion(output.squeeze(), y_central)
 
         if use_fp16 and scaler_amp is not None:
             scaler_amp.scale(loss).backward()
@@ -110,15 +110,10 @@ def train_one_epoch(
             optimizer.step()
 
         total_loss += loss.item() * X.size(0)
-        preds = torch.argmax(logits, dim=2)
-        total_correct += (preds == y_central).sum().item()
-        total_samples += y_central.numel()
-
         batch_bar.set_postfix(loss=f"{loss.item():.5f}")
 
-    avg_loss = total_loss / total_samples if total_samples > 0 else 0.0
-    accuracy = total_correct / total_samples if total_samples > 0 else 0.0
-    return avg_loss, accuracy
+    avg_loss = total_loss / len(train_loader.dataset) if len(train_loader.dataset) > 0 else 0.0
+    return avg_loss
 
 
 def validate(
@@ -127,48 +122,37 @@ def validate(
         criterion: torch.nn.Module,
         device: torch.device,
         config: dict[str, Any]
-) -> Tuple[float, float, np.ndarray, np.ndarray]:
+) -> float:
     """
     Выполняет валидацию модели.
-    Возвращает среднюю потерю, точность, объединённые предсказания и истинные метки.
+    Возвращает среднюю потерю.
     """
     model.eval()
     total_loss = 0.0
-    total_correct = 0
-    total_samples = 0
-    all_preds: List[np.ndarray] = []
-    all_targets: List[np.ndarray] = []
 
     with torch.no_grad():
         for X, y in val_loader:
             X, y = X.to(device), y.to(device)
             y_central = get_central_slice(y, config)
-            logits = model(X)
-            loss = criterion(logits.reshape(-1, config["NUM_CLASSES"]), y_central.reshape(-1))
+            output = model(X)
+            loss = criterion(output.squeeze(), y_central)
             total_loss += loss.item() * X.size(0)
-            preds = torch.argmax(logits, dim=2)
-            total_correct += (preds == y_central).sum().item()
-            total_samples += y_central.numel()
-            all_preds.append(preds.cpu().numpy().flatten())
-            all_targets.append(y_central.cpu().numpy().flatten())
 
-    avg_loss = total_loss / total_samples if total_samples > 0 else float("inf")
-    accuracy = total_correct / total_samples if total_samples > 0 else 0.0
-    all_preds = np.concatenate(all_preds) if total_samples > 0 else np.array([])
-    all_targets = np.concatenate(all_targets) if total_samples > 0 else np.array([])
-    return avg_loss, accuracy, all_preds, all_targets
+    avg_loss = total_loss / len(val_loader.dataset) if len(val_loader.dataset) > 0 else float("inf")
+    return avg_loss
 
 
-def log_epoch(epoch: int, num_epochs: int, train_loss: float, train_acc: float,
-              val_loss: float, val_acc: float, val_f1: float) -> str:
+def log_epoch(epoch: int, num_epochs: int, train_loss: float, val_loss: float) -> str:
     """
     Формирует и выводит сообщение с метриками текущей эпохи, а также отправляет его.
     """
+    train_loss_str = f"{train_loss:.5f}" if not np.isnan(train_loss) else "nan"
+    val_loss_str = f"{val_loss:.5f}" if not np.isnan(val_loss) else "nan"
+
     message = (
         f"Epoch {epoch:03}/{num_epochs} | "
-        f"Train Loss: {train_loss:.5f} | Train Acc: {train_acc * 100:.2f}% | "
-        f"Val Loss: {val_loss:.5f} | Val Acc: {val_acc * 100:.2f}% | "
-        f"Val F1 (macro): {val_f1:.5f}"
+        f"Train Loss: {train_loss_str} | "
+        f"Val Loss: {val_loss_str}"
     )
     logger.info(message)
     try:
@@ -178,11 +162,11 @@ def log_epoch(epoch: int, num_epochs: int, train_loss: float, train_acc: float,
     return message
 
 
-def save_epoch_checkpoint(model: torch.nn.Module, run_folder: str, epoch: int, val_acc: float) -> None:
+def save_epoch_checkpoint(model: torch.nn.Module, run_folder: str, epoch: int, val_loss: float) -> None:
     """
     Сохраняет чекпоинт модели и выполняет трассировку модели.
     """
-    checkpoint_path = os.path.join(run_folder, f"epoch_{epoch:04d}_valacc_{val_acc * 100:.2f}.pth")
+    checkpoint_path = os.path.join(run_folder, f"epoch_{epoch:04d}_valloss_{val_loss:.5f}.pth")
     try:
         save_checkpoint(model, checkpoint_path)
     except Exception as e:
@@ -194,14 +178,19 @@ def save_epoch_checkpoint(model: torch.nn.Module, run_folder: str, epoch: int, v
         logger.error("Ошибка при сохранении скриптованной модели: %s", e)
 
 
-def plot_and_send_results(model: torch.nn.Module, val_loader: Any, scaler_obj: Any,
+def plot_and_send_results(model: torch.nn.Module, train_loader: Any, val_loader: Any, scaler_obj: Any,
                           device: torch.device, config: dict[str, Any], run_folder: str, epoch: int) -> None:
     """
     Строит график результатов, сохраняет его и отправляет.
     """
     try:
-        fig = plot_classification_results_with_labels(
-            model, val_loader.dataset, scaler_obj, device, num_examples=1, config=config
+        fig = plot_regression_results(
+            model,
+            train_loader.dataset,
+            val_loader.dataset,
+            scaler_obj,
+            device,
+            config=config
         )
         plot_path = os.path.join(run_folder, f"epoch_{epoch:04d}_results.png")
         fig.savefig(plot_path)
@@ -220,13 +209,13 @@ def manage_checkpoints(
 ) -> List[Tuple[float, int]]:
     """
     Управляет чекпоинтами, сохраняя только N лучших эпох по метрике.
-    Предполагается, что чем выше метрика, тем лучше.
+    Предполагается, что чем НИЖЕ метрика (loss), тем лучше.
     """
     best_epochs.append((current_metric, current_epoch))
-    best_epochs.sort(key=lambda x: x[0], reverse=True)
+    best_epochs.sort(key=lambda x: x[0], reverse=False)  # Сортировка по возрастанию
 
     if len(best_epochs) > n_to_keep:
-        worst_metric, epoch_to_delete = best_epochs.pop()
+        worst_metric, epoch_to_delete = best_epochs.pop()  # Удаляем худший (самый большой)
         file_pattern = os.path.join(run_folder, f"epoch_{epoch_to_delete:04d}_*")
         files_to_delete = glob.glob(file_pattern)
 
@@ -235,7 +224,7 @@ def manage_checkpoints(
                 f"Пытался удалить файлы для эпохи {epoch_to_delete}, но они не найдены (шаблон: {file_pattern}).")
         else:
             logger.info(
-                f"Удаление файлов для худшей эпохи: {epoch_to_delete} (Val Acc: {worst_metric:.4f}). "
+                f"Удаление файлов для худшей эпохи: {epoch_to_delete} (Val Loss: {worst_metric:.5f}). "
                 f"Сохранено {len(best_epochs)} лучших эпох."
             )
             for file_path in files_to_delete:
@@ -262,24 +251,22 @@ def process_epoch(
         run_folder: str,
         scaler_obj: Any,
         best_epochs: List[Tuple[float, int]]
-) -> Tuple[float, float, float, float, float, List[Tuple[float, int]]]:
+) -> Tuple[float, float, List[Tuple[float, int]]]:
     """
     Выполняет обучение, валидацию, логирование, построение графиков и сохранение модели для одной эпохи.
     """
-    train_loss, train_acc = train_one_epoch(model, train_loader, optimizer, criterion, device, config, use_fp16,
-                                            scaler_amp)
+    train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device, config, use_fp16,
+                                 scaler_amp)
 
-    val_loss, val_acc, val_preds, val_targets = validate(model, val_loader, criterion, device, config)
-    try:
-        from sklearn.metrics import f1_score
-        val_f1 = float(f1_score(val_targets, val_preds, average="macro", zero_division=0))
-    except Exception as e:
-        logger.error("Ошибка при вычислении F1: %s", e)
-        val_f1 = 0.0
+    if np.isnan(train_loss):
+        logger.error(f"Обучение на эпохе {epoch} прервано из-за NaN loss.")
+        return train_loss, float('nan'), best_epochs
 
-    log_epoch(epoch, num_epochs, train_loss, train_acc, val_loss, val_acc, val_f1)
-    plot_and_send_results(model, val_loader, scaler_obj, device, config, run_folder, epoch)
-    save_epoch_checkpoint(model, run_folder, epoch, val_acc)
+    val_loss = validate(model, val_loader, criterion, device, config)
+
+    log_epoch(epoch, num_epochs, train_loss, val_loss)
+    plot_and_send_results(model, train_loader, val_loader, scaler_obj, device, config, run_folder, epoch)
+    save_epoch_checkpoint(model, run_folder, epoch, val_loss)
 
     n_to_keep = config.get("KEEP_TOP_N_EPOCHS", 0)
     if n_to_keep > 0:
@@ -287,11 +274,11 @@ def process_epoch(
             run_folder=run_folder,
             best_epochs=best_epochs,
             current_epoch=epoch,
-            current_metric=val_acc,
+            current_metric=val_loss,
             n_to_keep=n_to_keep,
         )
 
-    return train_loss, train_acc, val_loss, val_acc, val_f1, best_epochs
+    return train_loss, val_loss, best_epochs
 
 
 def train_model_loop(
@@ -301,17 +288,12 @@ def train_model_loop(
         device: torch.device,
         scaler_obj: Any,
         run_folder: str,
-        train_dataset: Any,
         config: dict[str, Any]
 ) -> torch.nn.Module:
     """
     Основной цикл обучения, использующий process_epoch для обработки каждой эпохи.
     """
-    if config.get("USE_CLASS_WEIGHTS", True):
-        weights_tensor = calculate_class_weights(train_dataset.tensors[1].numpy(), config["NUM_CLASSES"], device)
-    else:
-        weights_tensor = torch.ones(config["NUM_CLASSES"], dtype=torch.float32).to(device)
-    criterion = torch.nn.CrossEntropyLoss(weight=weights_tensor)
+    criterion = torch.nn.MSELoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["LR"])
 
     use_fp16 = config.get("USE_FP16", False) and device.type == 'cuda'
@@ -322,12 +304,15 @@ def train_model_loop(
     for epoch in range(1, num_epochs + 1):
         logger.info("Начало эпохи %d/%d", epoch, num_epochs)
 
-        # Получаем метрики из process_epoch, но val_acc больше не используется для сохранения лучшей модели
-        _, _, _, _, _, best_epochs = process_epoch(
+        train_loss, _, best_epochs = process_epoch(
             epoch, num_epochs, model, train_loader, val_loader, optimizer,
             criterion, device, config, use_fp16, scaler_amp, run_folder, scaler_obj,
             best_epochs
         )
+
+        if np.isnan(train_loss):
+            logger.error("Обнаружен NaN loss. Обучение остановлено.")
+            break
 
     return model
 
@@ -348,30 +333,37 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error("Ошибка при сохранении копий скриптов: %s", e)
 
+    # === НАЧАЛО ИЗМЕНЕНИЯ: Построение графика для проверки данных ===
     try:
-        train_loader, val_loader, test_loader, scaler, num_features, train_dataset = create_datasets(CONFIG)
+        logger.info("--- НАЧАЛО ПРОВЕРКИ ДАННЫХ ---")
+        plot_initial_dataset_check(
+            csv_path=CONFIG["TRAIN_CSV"],
+            config=CONFIG,
+            output_folder=run_folder
+        )
+        logger.info("--- ПРОВЕРКА ДАННЫХ ЗАВЕРШЕНА ---")
+    except Exception as e:
+        logger.error("Критическая ошибка на этапе построения графика для проверки данных: %s", e)
+    # === КОНЕЦ ИЗМЕНЕНИЯ ===
+
+    try:
+        train_loader, val_loader, test_loader, scaler, num_features = create_datasets(CONFIG)
         if scaler is not None:
             save_scaler(scaler, run_folder)
-        print_label_statistics(train_dataset.tensors[1].numpy(), CONFIG["NUM_CLASSES"])
-        weights_tensor = calculate_class_weights(train_dataset.tensors[1].numpy(), CONFIG["NUM_CLASSES"], device)
-        logger.info("Рассчитанные веса классов: %s", weights_tensor)
 
         model = TransformerTimeSeriesModel(
             input_channels=num_features,
-            num_classes=CONFIG["NUM_CLASSES"],
+            output_dim=1,  # Для регрессии выход один
             config=CONFIG
         ).to(device)
         logger.info("Параметры модели:")
         logger.info("Input shape: (batch, %d, %d)", CONFIG["INPUT_LENGTH"], num_features)
-        logger.info("Number of classes: %d", CONFIG["NUM_CLASSES"])
         summary(model, input_size=(1, CONFIG["INPUT_LENGTH"], num_features))
 
-        # --- НАЧАЛО ИЗМЕНЕНИЙ: УЛУЧШЕННАЯ ЗАГРУЗКА ВЕСОВ ---
         best_model_path = os.path.join(BASE_CHECKPOINT_DIR, "best_model.pth")
         if os.path.exists(best_model_path):
             logger.info("Найден файл best_model.pth. Попытка загрузки весов...")
             try:
-                # Загружаем веса с strict=False, чтобы избежать падения при несовпадении ключей
                 incompatible_keys = model.load_state_dict(
                     torch.load(best_model_path, map_location=device),
                     strict=False
@@ -390,14 +382,8 @@ if __name__ == "__main__":
                 logger.error("Критическая ошибка при загрузке весов. Обучение начнется с нуля.", exc_info=True)
         else:
             logger.info("Файл best_model.pth не найден. Обучение начнется с нуля.")
-        # --- КОНЕЦ ИЗМЕНЕНИЙ ---
 
-        model = train_model_loop(model, train_loader, val_loader, device, scaler, run_folder, train_dataset, CONFIG)
-
-        # Этот блок больше не нужен, так как лучшая модель уже сохраняется в цикле
-        # best_model_run_path = os.path.join(run_folder, "best_model.pth")
-        # if os.path.exists(best_model_run_path):
-        # ...
+        model = train_model_loop(model, train_loader, val_loader, device, scaler, run_folder, CONFIG)
 
         try:
             scripted_model_path = os.path.join(run_folder, "best_model_scripted.pt")
