@@ -100,6 +100,7 @@ PIPELINE_CONFIG = {
     "STEP_9_OUTPUT_WEIGHT_DELTA_COLUMN": "Изменение_веса_на_крюке",
     "STEP_9_OUTPUT_BIT_DEPTH_SQUARED_COLUMN": "Глубина_долота_кв",
     "STEP_9_OUTPUT_SPEED_SQUARED_COLUMN": "Скорость_инструмента_кв",
+    "STEP_9_OUTPUT_SIGNED_SPEED_SQUARED_COLUMN": "Скорость_инструмента_кв_знак",
     "STEP_9_OUTPUT_FILE": "step_9_final_with_derivatives.csv",
 
     # Шаг 10: Расчет параметра "Над забоем" и его бинарной версии
@@ -111,4 +112,3 @@ PIPELINE_CONFIG = {
     "STEP_10_BINARY_OUTPUT_COLUMN": "Над забоем, м (бинарный)",
     "STEP_10_OUTPUT_FILE": "step_10_final_dataset.csv"
 }
-

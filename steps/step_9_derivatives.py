@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import numpy as np
 import logging
 from config import PIPELINE_CONFIG
 
@@ -29,6 +30,8 @@ def run_step_9():
         weight_delta_col = PIPELINE_CONFIG['STEP_9_OUTPUT_WEIGHT_DELTA_COLUMN']
         bit_depth_sq_col = PIPELINE_CONFIG['STEP_9_OUTPUT_BIT_DEPTH_SQUARED_COLUMN']
         speed_sq_col = PIPELINE_CONFIG['STEP_9_OUTPUT_SPEED_SQUARED_COLUMN']
+        # --- НОВЫЙ СТОЛБЕЦ ---
+        signed_speed_sq_col = PIPELINE_CONFIG['STEP_9_OUTPUT_SIGNED_SPEED_SQUARED_COLUMN']
 
         # Проверка наличия исходных столбцов
         required_cols = [hook_height_col, weight_col, bit_depth_col]
@@ -56,6 +59,12 @@ def run_step_9():
 
         logger.info(f"Расчет квадрата скорости инструмента ('{speed_sq_col}').")
         df[speed_sq_col] = df[speed_col] ** 2
+
+        # --- НОВАЯ ЛОГИКА ---
+        logger.info(f"Расчет квадрата скорости со знаком направления ('{signed_speed_sq_col}').")
+        # Умножаем абсолютное значение (квадрат) на знак исходной скорости.
+        # Это сохраняет магнитуду квадрата, но добавляет контекст направления.
+        df[signed_speed_sq_col] = df[speed_sq_col] * np.sign(df[speed_col])
 
         # 5. Сохранение результата
         output_filename = PIPELINE_CONFIG['STEP_9_OUTPUT_FILE']
