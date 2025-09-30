@@ -51,6 +51,7 @@ def run_step_11():
     - Использует динамический размер окна для обучения.
     - Добавлена проверка минимальной глубины долота с противоусловием по весу.
     - Добавлена фильтрация по давлению для обучения и поиска аномалий.
+    - Добавлена проверка на "устаревание" модели: если модель не переобучалась дольше X минут, она сбрасывается.
     """
     logger.info("---[ Шаг 11: Поиск аномалий (динамическое окно, проверка динамики и разрывов) ]---")
     try:
@@ -84,10 +85,17 @@ def run_step_11():
         enable_weight_override = PIPELINE_CONFIG.get('STEP_11_ENABLE_WEIGHT_OVERRIDE', False)
         min_weight_override = PIPELINE_CONFIG.get('STEP_11_MIN_WEIGHT_OVERRIDE', 35.0)
 
-        # --- НОВЫЕ ПАРАМЕТРЫ ДЛЯ ФИЛЬТРАЦИИ ПО ДАВЛЕНИЮ ---
+        # --- ПАРАМЕТРЫ ДЛЯ ФИЛЬТРАЦИИ ПО ДАВЛЕНИЮ ---
         pressure_col = PIPELINE_CONFIG.get('STEP_11_PRESSURE_COLUMN')
         enable_pressure_filter = PIPELINE_CONFIG.get('STEP_11_ENABLE_PRESSURE_FILTER', False)
         pressure_threshold = PIPELINE_CONFIG.get('STEP_11_PRESSURE_THRESHOLD', 200.0)
+
+        # --- НОВЫЕ ПАРАМЕТРЫ ДЛЯ СБРОСА УСТАРЕВШЕЙ МОДЕЛИ ---
+        enable_stale_check = PIPELINE_CONFIG.get('STEP_11_ENABLE_MODEL_STALE_CHECK', False)
+        stale_threshold_minutes = PIPELINE_CONFIG.get('STEP_11_MODEL_STALE_THRESHOLD_MINUTES', 60)
+
+        if enable_stale_check:
+            logger.info(f"Включена проверка на устаревание модели. Порог: {stale_threshold_minutes} минут.")
 
         if enable_pressure_filter:
             logger.info(
@@ -148,6 +156,7 @@ def run_step_11():
 
             model = LinearRegression()
             is_model_fitted = False
+            last_training_time = None  # Для отслеживания времени последнего обучения
 
             block_df.loc[:, 'is_anomaly'] = 0
             block_df.loc[:, 'potential_anomaly_flag'] = 0
@@ -155,15 +164,29 @@ def run_step_11():
             for i in tqdm(range(min_window_size, len(block_df), window_step),
                           desc=f"Анализ блока {block_num}/{total_blocks}"):
 
+                # --- НОВАЯ ЛОГИКА: ПРОВЕРКА УСТАРЕВАНИЯ МОДЕЛИ ---
+                # Если модель обучена, проверяем, не прошло ли слишком много времени с последнего обучения
+                if is_model_fitted and enable_stale_check and last_training_time:
+                    current_time = block_df[time_col].iloc[i]
+                    time_diff_minutes = (current_time - last_training_time).total_seconds() / 60
+                    if time_diff_minutes > stale_threshold_minutes:
+                        logger.info(
+                            f"Модель устарела (не обучалась {time_diff_minutes:.1f} мин > "
+                            f"порога {stale_threshold_minutes} мин). Сброс модели."
+                        )
+                        is_model_fitted = False
+                        last_training_time = None
+                # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
+
                 start_index = max(0, i - max_window_size)
                 train_window_full = block_df.iloc[start_index:i]
 
                 clean_train_window = train_window_full[train_window_full['is_anomaly'] == 0]
 
-                # --- НОВАЯ ЛОГИКА: Фильтрация обучающего окна по давлению ---
+                # --- Фильтрация обучающего окна по давлению ---
                 if enable_pressure_filter:
                     clean_train_window = clean_train_window[clean_train_window[pressure_col] <= pressure_threshold]
-                # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
+                # --- КОНЕЦ ---
 
                 # Проверка условий для переобучения
                 should_retrain = False
@@ -178,6 +201,9 @@ def run_step_11():
                     model.fit(clean_train_window[feature_cols], clean_train_window[target_col])
                     is_model_fitted = True
                     df.loc[clean_train_window.index, training_flag_col] = 1
+                    # --- НОВАЯ ЛОГИКА: Запоминаем время последнего обучения ---
+                    last_training_time = clean_train_window[time_col].iloc[-1]
+                    # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
 
                 if not is_model_fitted:
                     continue
@@ -189,7 +215,6 @@ def run_step_11():
 
                 # 1. Фильтр по давлению
                 if enable_pressure_filter:
-                    # Пропускаем только те строки, где давление НЕ превышает порог
                     analysis_block = analysis_block[analysis_block[pressure_col] <= pressure_threshold]
 
                 # 2. Фильтр по глубине и весу (если блок еще не пуст)
