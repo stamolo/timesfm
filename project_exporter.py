@@ -25,7 +25,7 @@ DEFAULT_BLACKLIST: Set[str] = {
     'pytest.ini', '!labeled_output__.xlsx',
     # 'Dockerfile.prod', 'Dockerfile',
     # 'docker-compose.yml', 'docker-compose.prod.yml',
-    'tmp', 'test_sps', 'dataset'
+    'tmp', 'test_sps', 'dataset', 'pipeline.log'
 }
 
 DEFAULT_MAX_BYTES = 1_000_000  # 1 MiB

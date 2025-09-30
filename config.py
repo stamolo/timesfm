@@ -20,11 +20,12 @@ PIPELINE_CONFIG = {
     "OUTPUT_DIR": "output",
     "MODEL_PATH": r"D:\models\checkpoints_k\best_model_kl.pt",
 
+    # --- ОБЩАЯ НАСТРОЙКА ПАЙПЛАЙНА ---
+    # Указывает, с какого шага начинать выполнение.
+    # Например: 1 - с самого начала, 11 - начать с поиска аномалий.
+    "START_PIPELINE_FROM_STEP": 11,
+
     # Шаг 1: Выгрузка
-    # --- ИЗМЕНЕНИЕ ---
-    # Если True, Шаг 1 не будет подключаться к БД, а будет использовать
-    # существующий файл step_1_extracted.csv из папки output.
-    # Если False, выгрузка будет производиться из БД как обычно.
     "USE_EXISTING_STEP_1_OUTPUT": False,
     "TOP_N": 1000000,
     "SORT_COLUMN": "Время_204",
@@ -66,30 +67,20 @@ PIPELINE_CONFIG = {
     "STEP_6_OUTPUT_FILE": "step_6_block_average_weight.csv",
 
     # Шаг 7: Продвинутый сброс глубины по анализу блоков
-    # --- Условие 1: Сравнение рабочих блоков между собой ---
     "STEP_7_PREVIOUS_BLOCKS_N": 30,
     "STEP_7_CURRENT_BLOCKS_Z": 30,
     "STEP_7_MIN_PREV_BLOCK_LENGTH_Y": 60,
     "STEP_7_MIN_BLOCK_LENGTH_M": 60,
     "STEP_7_WEIGHT_DROP_THRESHOLD_X": 10.0,
-
-    # --- Условие 2: Сравнение рабочих блоков с блоками на клиньях ---
-    # N_slips: количество ПОСЛЕДНИХ блоков на клиньях для расчета "опорного" веса
     "STEP_7_SLIPS_BLOCKS_N": 15,
-    # R: макс. допустимое превышение текущего рабочего веса над "опорным" (в тоннах)
     "STEP_7_MAX_WEIGHT_ABOVE_SLIPS_R": 10,
-
-    # --- Общие настройки Шага 7 ---
     "STEP_7_OUTPUT_COLUMN": "Глубина_инструмента_финал",
     "STEP_7_OUTPUT_FILE": "step_7_final_dataset.csv",
     "STEP_7_BLOCKS_REPORT_FILE": "step_7_blocks_report.csv",
 
     # Шаг 8: Расчет глубины забоя
-    # Входной столбец с финальной глубиной инструмента из Шага 7
     "STEP_8_INPUT_TOOL_DEPTH_COLUMN": "Глубина_инструмента_финал",
-    # Имя нового столбца с расчетной глубиной забоя
     "STEP_8_OUTPUT_BHD_COLUMN": "Глубина_забоя_расчетная",
-    # Имя итогового файла пайплайна
     "STEP_8_OUTPUT_FILE": "step_8_final_dataset.csv",
 
     # Шаг 9: Расчет производных (скорость и изменение веса) и квадратов
@@ -112,7 +103,7 @@ PIPELINE_CONFIG = {
     "STEP_10_BINARY_OUTPUT_COLUMN": "Над забоем, м (бинарный)",
     "STEP_10_OUTPUT_FILE": "step_10_final_dataset.csv",
 
-    # Шаг 11: Построение модели и поиск аномалий веса
+    # Шаг 11: Поиск аномалий веса
     "STEP_11_TARGET_COLUMN": "Вес_на_крюке_28",
     "STEP_11_FEATURE_COLUMNS": [
         "Скорость_инструмента",
@@ -122,21 +113,37 @@ PIPELINE_CONFIG = {
     ],
     "STEP_11_SLIPS_COLUMN": "клинья_0123",
     "STEP_11_ABOVE_BHD_COLUMN": "Над забоем, м (бинарный)",
-    "STEP_11_WINDOW_SIZE_N": 1000,
+    "STEP_11_WINDOW_SIZE_N": 600,
     "STEP_11_WINDOW_STEP": 10,
     "STEP_11_ANOMALY_THRESHOLD": 15.0,
     "STEP_11_CONSECUTIVE_ANOMALIES_MIN": 5,
-
-    # Новый параметр: Исключать из обучения все потенциальные аномалии (True)
-    # или только подтвержденные (False)
     "STEP_11_EXCLUDE_ALL_POTENTIAL_ANOMALIES": False,
-
-    # Новые параметры: Ограничение (clipping) для предсказанного веса
-    "STEP_11_USE_PREDICTION_CLIP": True,  # Включить/выключить обрезку
-    "STEP_11_PREDICTION_MIN_CLIP": 0,  # Минимальное значение веса
-    "STEP_11_PREDICTION_MAX_CLIP": 150,  # Максимальное значение веса
-
+    "STEP_11_USE_PREDICTION_CLIP": True,
+    "STEP_11_PREDICTION_MIN_CLIP": 0,
+    "STEP_11_PREDICTION_MAX_CLIP": 150,
+    # --- НОВЫЕ ПАРАМЕТРЫ ---
+    # Порог в минутах. Если разрыв в данных больше этого значения, модель сбрасывается.
+    # Установите 0, чтобы отключить эту функцию.
+    "STEP_11_TIME_GAP_THRESHOLD_MINUTES": 15,
     "STEP_11_OUTPUT_FILE": "step_11_anomaly_detection.csv",
-    "STEP_11_PLOT_FILE": "step_11_anomaly_plot.png",
+
+
+    # Шаг 12: Построение графиков
+    "STEP_12_PLOT_FILE": "step_12_anomaly_plot.png",
+    "STEP_12_CHUNK_MINUTES": 60,
+    "STEP_12_SKIPPED_CHUNKS_REPORT_FILE": "step_12_skipped_chunks_report.csv",
+
+    "STEP_12_PLOT_SETTINGS": {
+        "bit_depth":        {"color": "green",       "alpha": 1.0},
+        "final_bhd":        {"color": "black",       "alpha": 1.0},
+        "hookload":         {"color": "royalblue",   "alpha": 1.0},
+        "predicted_weight": {"color": "skyblue",     "alpha": 1.0},
+        "avg_weight":       {"color": "orange",      "alpha": 1.0},
+        "anomaly":          {"color": "red",         "alpha": 0.5, "size": 10},
+        "slips_0123":       {"color": "black",       "alpha": 0.6},
+        "pressure":         {"color": "firebrick",   "alpha": 1.0},
+        "rpm":              {"color": "purple",      "alpha": 1.0},
+        "hook_height":      {"color": "darkcyan",    "alpha": 1.0}
+    }
 }
 

@@ -14,6 +14,7 @@ from steps.step_8_bottom_hole_depth import run_step_8
 from steps.step_9_derivatives import run_step_9
 from steps.step_10_above_bottom_hole import run_step_10
 from steps.step_11_anomaly_detection import run_step_11
+from steps.step_12_plotting import run_step_12
 
 # Настройка логирования для отслеживания всего процесса
 logging.basicConfig(
@@ -43,14 +44,22 @@ def main():
         ("Шаг 8: Расчет глубины забоя", run_step_8),
         ("Шаг 9: Расчет производных", run_step_9),
         ("Шаг 10: Расчет 'Над забоем'", run_step_10),
-        ("Шаг 11: Поиск аномалий веса", run_step_11)
+        ("Шаг 11: Поиск аномалий веса", run_step_11),
+        ("Шаг 12: Построение итоговых графиков", run_step_12)
     ]
 
     try:
         os.makedirs(PIPELINE_CONFIG['OUTPUT_DIR'], exist_ok=True)
         logging.info(f"Директория '{PIPELINE_CONFIG['OUTPUT_DIR']}' готова.")
 
-        for name, step_function in pipeline_steps:
+        start_step = PIPELINE_CONFIG.get("START_PIPELINE_FROM_STEP", 1)
+        logging.info(f"Пайплайн будет запущен с Шага {start_step}.")
+
+        for step_number, (name, step_function) in enumerate(pipeline_steps, start=1):
+            if step_number < start_step:
+                logging.info(f"---[ Пропущен: {name} (согласно настройке START_PIPELINE_FROM_STEP={start_step}) ]---")
+                continue
+
             logging.info(f"---[ Запуск: {name} ]---")
             if not step_function():
                 logging.error(f"Пайплайн остановлен из-за ошибки на этапе: {name}.")
