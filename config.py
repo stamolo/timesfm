@@ -9,7 +9,7 @@ DB_CONFIG = {
     "DRIVER": os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server"),
     "SERVER": os.getenv("DB_SERVER"),
     "DATABASE": os.getenv("DB_DATABASE"),
-    "VIEW_NAME": "[dbo].[v_kharyaginskoe_kha_e1_17_1]",  # Имя view возвращено в конфиг
+    "VIEW_NAME": "[dbo].[v_kharyaginskoe_kha_e1_17_1]",
     "USERNAME": os.getenv("DB_USERNAME"),
     "PASSWORD": os.getenv("DB_PASSWORD")
 }
@@ -19,15 +19,11 @@ PIPELINE_CONFIG = {
     # Общие
     "OUTPUT_DIR": "output",
     "MODEL_PATH": r"D:\models\checkpoints_k\best_model_kl.pt",
-
-    # --- ОБЩАЯ НАСТРОЙКА ПАЙПЛАЙНА ---
-    # Указывает, с какого шага начинать выполнение.
-    # Например: 1 - с самого начала, 11 - начать с поиска аномалий.
-    "START_PIPELINE_FROM_STEP": 11,
+    "START_PIPELINE_FROM_STEP": 12, # С какого шага начинать пайплайн (1-12)
 
     # Шаг 1: Выгрузка
     "USE_EXISTING_STEP_1_OUTPUT": False,
-    "TOP_N": 1000000,
+    "TOP_N": 300000,
     "SORT_COLUMN": "Время_204",
     "ALL_COLUMNS": [
         "Время_204", "Вес_на_крюке_28", "Высота_крюка_103",
@@ -83,7 +79,7 @@ PIPELINE_CONFIG = {
     "STEP_8_OUTPUT_BHD_COLUMN": "Глубина_забоя_расчетная",
     "STEP_8_OUTPUT_FILE": "step_8_final_dataset.csv",
 
-    # Шаг 9: Расчет производных (скорость и изменение веса) и квадратов
+    # Шаг 9: Расчет производных и квадратов
     "STEP_9_HOOK_HEIGHT_COLUMN": "Высота_крюка_103",
     "STEP_9_WEIGHT_COLUMN": "Вес_на_крюке_28",
     "STEP_9_BIT_DEPTH_COLUMN": "Глубина_долота_35",
@@ -94,7 +90,7 @@ PIPELINE_CONFIG = {
     "STEP_9_OUTPUT_SIGNED_SPEED_SQUARED_COLUMN": "Скорость_инструмента_кв_знак",
     "STEP_9_OUTPUT_FILE": "step_9_final_with_derivatives.csv",
 
-    # Шаг 10: Расчет параметра "Над забоем" и его бинарной версии
+    # Шаг 10: Расчет параметра "Над забоем"
     "STEP_10_BHD_COLUMN": "Глубина_забоя_36",
     "STEP_10_BIT_DEPTH_COLUMN": "Глубина_долота_35",
     "STEP_10_OUTPUT_COLUMN": "Над забоем, м",
@@ -113,37 +109,61 @@ PIPELINE_CONFIG = {
     ],
     "STEP_11_SLIPS_COLUMN": "клинья_0123",
     "STEP_11_ABOVE_BHD_COLUMN": "Над забоем, м (бинарный)",
-    "STEP_11_WINDOW_SIZE_N": 600,
+    "STEP_11_MIN_WINDOW_SIZE": 300, # Мин. кол-во точек для обучения
+    "STEP_11_MAX_WINDOW_SIZE": 1000, # Макс. размер окна, которое смотрит назад
     "STEP_11_WINDOW_STEP": 10,
-    "STEP_11_ANOMALY_THRESHOLD": 15.0,
-    "STEP_11_CONSECUTIVE_ANOMALIES_MIN": 5,
+    "STEP_11_ANOMALY_THRESHOLD": 10.0,
+    "STEP_11_CONSECUTIVE_ANOMALIES_MIN": 3,
     "STEP_11_EXCLUDE_ALL_POTENTIAL_ANOMALIES": False,
     "STEP_11_USE_PREDICTION_CLIP": True,
     "STEP_11_PREDICTION_MIN_CLIP": 0,
     "STEP_11_PREDICTION_MAX_CLIP": 150,
-    # --- НОВЫЕ ПАРАМЕТРЫ ---
-    # Порог в минутах. Если разрыв в данных больше этого значения, модель сбрасывается.
-    # Установите 0, чтобы отключить эту функцию.
-    "STEP_11_TIME_GAP_THRESHOLD_MINUTES": 15,
+    "STEP_11_TIME_GAP_THRESHOLD_MINUTES": 10,
+    "STEP_11_MIN_CONTINUOUS_TRAVEL_EACH_DIRECTION": 5.0, # Мин. суммарный ход крюка вверх И вниз для переобучения
+    "STEP_11_TRAINING_FLAG_COLUMN": "Модель_обучалась_флаг",
     "STEP_11_OUTPUT_FILE": "step_11_anomaly_detection.csv",
 
+    # Шаг 12: Построение итоговых графиков
+    "STEP_12_INPUT_FILE": "step_11_anomaly_detection.csv",
+    "STEP_12_PLOT_FILE_PREFIX": "step_12_anomaly_plot",
+    "STEP_12_CHUNK_MINUTES": 120,
+    "STEP_12_SKIPPED_CHUNKS_REPORT_FILE": "step_12_skipped_chunks_report.csv",
 
-    # Шаг 12: Построение графиков
-    "STEP_12_PLOT_FILE": "step_12_anomaly_plot.png",
-    "STEP_12_CHUNK_MINUTES": 60,
+    # Шаг 12: Построение итоговых графиков
+    "STEP_12_INPUT_FILE": "step_11_anomaly_detection.csv",
+    "STEP_12_PLOT_FILE_PREFIX": "step_12_anomaly_plot",
+    "STEP_12_CHUNK_MINUTES": 120,
     "STEP_12_SKIPPED_CHUNKS_REPORT_FILE": "step_12_skipped_chunks_report.csv",
 
     "STEP_12_PLOT_SETTINGS": {
-        "bit_depth":        {"color": "green",       "alpha": 1.0},
-        "final_bhd":        {"color": "black",       "alpha": 1.0},
-        "hookload":         {"color": "royalblue",   "alpha": 1.0},
-        "predicted_weight": {"color": "skyblue",     "alpha": 1.0},
-        "avg_weight":       {"color": "orange",      "alpha": 1.0},
-        "anomaly":          {"color": "red",         "alpha": 0.5, "size": 10},
-        "slips_0123":       {"color": "black",       "alpha": 0.6},
-        "pressure":         {"color": "firebrick",   "alpha": 1.0},
-        "rpm":              {"color": "purple",      "alpha": 1.0},
-        "hook_height":      {"color": "darkcyan",    "alpha": 1.0}
+        "bit_depth_col": "Глубина_долота_35",
+        "bhd_col": "Глубина_забоя_36",
+        "hookload_col": "Вес_на_крюке_28",
+        "predicted_hookload_col": "predicted_weight",
+        "avg_hookload_col": "средний_вес_по_блоку",
+        "slips_col": "клинья_0123",
+        "pressure_col": "Давление_на_входе_18",
+        "rpm_col": "Обороты_ротора_72",
+        "hook_height_col": "Высота_крюка_103",
+        "training_flag_col": "Модель_обучалась_флаг",
+
+        "colors": {
+            "bit_depth": "green",
+            "bhd": "black",
+            "hookload": "royalblue",
+            "predicted_hookload": "orange",
+            "avg_hookload": "gold",
+            "anomaly": "red",
+            "slips": "black",
+            "pressure": "maroon",
+            "rpm": "purple",
+            "hook_height_trained": "black",
+            "hook_height_not_trained": "grey"
+        },
+        "anomaly_marker_s": 15,
+        "anomaly_marker_alpha": 0.6
     }
 }
+
+
 

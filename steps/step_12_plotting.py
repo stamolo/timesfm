@@ -4,201 +4,157 @@ import numpy as np
 import logging
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+from tqdm import tqdm
 from config import PIPELINE_CONFIG
+from matplotlib.lines import Line2D
 
 logger = logging.getLogger(__name__)
 
 
 def run_step_12():
     """
-    Шаг 12: Построение итоговых комплексных графиков.
+    Шаг 12: Построение комплексных графиков для визуального анализа.
     """
-    logger.info("---[ Шаг 12: Построение итоговых графиков (ось Y - время) ]---")
+    logger.info("---[ Шаг 12: Построение итоговых графиков ]---")
     try:
-        # 1. Загрузка данных и параметров
-        step_11_path = os.path.join(PIPELINE_CONFIG['OUTPUT_DIR'], PIPELINE_CONFIG['STEP_11_OUTPUT_FILE'])
-        if not os.path.exists(step_11_path):
-            logger.error(f"Файл {step_11_path} не найден. Запустите Шаг 11.")
+        # --- 1. Загрузка данных и параметров ---
+        input_filename = PIPELINE_CONFIG['STEP_12_INPUT_FILE']
+        input_path = os.path.join(PIPELINE_CONFIG['OUTPUT_DIR'], input_filename)
+        if not os.path.exists(input_path):
+            logger.error(f"Файл {input_path} не найден. Запустите Шаг 11.")
             return False
 
-        df = pd.read_csv(step_11_path, sep=';', decimal=',', encoding='utf-8')
-        logger.info(f"Загружен файл {step_11_path}, содержащий {len(df)} строк.")
+        df = pd.read_csv(input_path, sep=';', decimal=',', encoding='utf-8')
+        logger.info(f"Загружен файл {input_path}, содержащий {len(df)} строк.")
 
-        # 2. Получение имен столбцов и настроек графиков из конфига
-        time_col = PIPELINE_CONFIG.get('SORT_COLUMN')
-        final_bhd_col = PIPELINE_CONFIG['STEP_8_OUTPUT_BHD_COLUMN']
-        bit_depth_col = PIPELINE_CONFIG['STEP_9_BIT_DEPTH_COLUMN']
-        hookload_col = PIPELINE_CONFIG['STEP_11_TARGET_COLUMN']
-        hook_height_col = PIPELINE_CONFIG['STEP_9_HOOK_HEIGHT_COLUMN']
-        pressure_col = "Давление_на_входе_18"
-        rpm_col = "Обороты_ротора_72"
-        avg_weight_col = PIPELINE_CONFIG['STEP_6_OUTPUT_AVG_WEIGHT_COLUMN']
-        slips_0123_col = PIPELINE_CONFIG['STEP_4_INPUT_COLUMN']
-
+        # --- 2. Получение имен столбцов и настроек из конфига ---
         plot_settings = PIPELINE_CONFIG.get('STEP_12_PLOT_SETTINGS', {})
+        time_col = PIPELINE_CONFIG.get('SORT_COLUMN')
 
+        bit_depth_col = plot_settings.get('bit_depth_col', 'Глубина_долота_35')
+        bhd_col = plot_settings.get('bhd_col', 'Глубина_забоя_36')
+        hookload_col = plot_settings.get('hookload_col', 'Вес_на_крюке_28')
+        predicted_hookload_col = plot_settings.get('predicted_hookload_col', 'predicted_weight')
+        avg_hookload_col = plot_settings.get('avg_hookload_col', 'средний_вес_по_блоку')
+        slips_col = plot_settings.get('slips_col', 'клинья_0123')
+        pressure_col = plot_settings.get('pressure_col', 'Давление_на_входе_18')
+        rpm_col = plot_settings.get('rpm_col', 'Обороты_ротора_72')
+        hook_height_col = plot_settings.get('hook_height_col', 'Высота_крюка_103')
+        training_flag_col = plot_settings.get('training_flag_col', 'Модель_обучалась_флаг')
+
+        colors = plot_settings.get('colors', {})
+        anomaly_s = plot_settings.get('anomaly_marker_s', 15)
+        anomaly_alpha = plot_settings.get('anomaly_marker_alpha', 0.6)
+
+        # --- 3. Подготовка данных для построения графиков ---
         if time_col not in df.columns:
-            logger.error(f"Столбец времени '{time_col}' не найден.")
+            logger.error(f"Временной столбец '{time_col}' не найден.")
             return False
-        if df[time_col].dtype == 'object':
-            df[time_col] = pd.to_datetime(df[time_col].str.replace(',', '.'))
+        df[time_col] = pd.to_datetime(df[time_col].astype(str).str.replace(',', '.'))
+        df.set_index(time_col, inplace=True)
 
-        # 3. Построение графиков по временным интервалам
-        minutes_per_chunk = PIPELINE_CONFIG.get('STEP_12_CHUNK_MINUTES', 120)
-        time_delta = pd.Timedelta(minutes=minutes_per_chunk)
-        overall_start_time = df[time_col].min()
-        overall_end_time = df[time_col].max()
+        # --- 4. Разбивка на временные интервалы ---
+        chunk_minutes = PIPELINE_CONFIG.get('STEP_12_CHUNK_MINUTES', 120)
+        start_time = df.index.min().floor('h')
+        end_time = df.index.max().ceil('h')
+        time_chunks = pd.date_range(start=start_time, end=end_time, freq=f'{chunk_minutes}min')
 
-        if pd.isna(overall_start_time):
-            logger.warning("Нет данных о времени для построения графиков. Шаг 12 пропущен.")
-            return True
+        skipped_chunks = []
+        base_plot_filename = PIPELINE_CONFIG.get('STEP_12_PLOT_FILE_PREFIX', 'plot')
 
-        anchor_time = overall_start_time.floor('H')
-
-        num_chunks = int(np.ceil((overall_end_time - anchor_time) / time_delta)) if not pd.isna(overall_end_time) else 0
-        if num_chunks == 0 and not df.empty:
-            num_chunks = 1
-
-        logger.info(
-            f"Данные будут разбиты на {num_chunks} графиков по {minutes_per_chunk} минут каждый (с выравниванием по часу).")
-
-        base_plot_filename = PIPELINE_CONFIG['STEP_12_PLOT_FILE']
-        filename, file_extension = os.path.splitext(base_plot_filename)
-
-        for i in range(num_chunks):
-            chunk_start_time = anchor_time + i * time_delta
-            chunk_end_time = chunk_start_time + time_delta
-
-            df_chunk = df[(df[time_col] >= chunk_start_time) & (df[time_col] < chunk_end_time)]
-
-            plt.style.use('seaborn-v0_8-whitegrid')
-            fig, (ax1, ax2, ax3, ax4) = plt.subplots(nrows=1, ncols=4, figsize=(28, 16), sharey=True)
+        for i in tqdm(range(len(time_chunks) - 1), desc="Создание графиков"):
+            start_chunk_time = time_chunks[i]
+            end_chunk_time = time_chunks[i + 1]
+            df_chunk = df[(df.index >= start_chunk_time) & (df.index < end_chunk_time)]
 
             if df_chunk.empty:
-                logger.info(f"Создание ПУСТОГО графика для части {i + 1}/{num_chunks} (нет данных в интервале)...")
-                start_depth, end_depth = np.nan, np.nan
-                time_info_string = f"Нет данных в интервале: {chunk_start_time.strftime('%Y-%m-%d %H:%M')} - {chunk_end_time.strftime('%Y-%m-%d %H:%M')}"
+                skipped_chunks.append({'start_time': start_chunk_time, 'end_time': end_chunk_time, 'reason': 'no_data'})
+                continue
 
-                # Настраиваем пустые панели
-                ax1.set_title('Положение долота')
-                ax2.set_title('Анализ веса и состояния клиньев')
-                ax3.set_title('Мех. и гидравлика')
-                ax4.set_title('Положение талевого блока')
+            # --- 5. Построение графика для текущего интервала ---
+            plt.style.use('seaborn-v0_8-whitegrid')
+            fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(28, 14), sharey=True)
 
-                for ax in [ax1, ax2, ax3, ax4]:
-                    ax.grid(True, which='both', linestyle=':', linewidth=0.5)
+            main_ax = ax1
+            if len(df_chunk.index.unique()) > 1:
+                main_ax.set_ylim(df_chunk.index.min(), df_chunk.index.max())
+            main_ax.invert_yaxis()
+            main_ax.yaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+            main_ax.set_ylabel('Время (чч:мм)', fontsize=12)
 
-            else:
-                logger.info(
-                    f"Создание графика для части {i + 1}/{num_chunks} (время с {chunk_start_time.strftime('%Y-%m-%d %H:%M')} по {chunk_end_time.strftime('%Y-%m-%d %H:%M')})...")
+            # --- Панель 1: Положение долота ---
+            ax1.set_xlabel('Глубина, м', fontsize=12)
+            ax1.plot(df_chunk[bit_depth_col], df_chunk.index, label='Глубина долота', color=colors.get('bit_depth'))
+            ax1.plot(df_chunk[bhd_col], df_chunk.index, label='Глубина забоя', color=colors.get('bhd'), linestyle='--')
+            ax1.legend()
 
-                y_data = df_chunk[time_col]
+            # --- Панель 2: Анализ веса и состояние клиньев ---
+            ax2.set_xlabel('Вес на крюке, т', fontsize=12)
+            ax2.plot(df_chunk[hookload_col], df_chunk.index, label='Вес на крюке', color=colors.get('hookload'))
+            ax2.plot(df_chunk[predicted_hookload_col], df_chunk.index, label='Predicted вес',
+                     color=colors.get('predicted_hookload'))
+            ax2.plot(df_chunk[avg_hookload_col], df_chunk.index, label='Средний вес по блоку',
+                     color=colors.get('avg_hookload'))
+            anomalies = df_chunk[df_chunk['is_anomaly'] == 1]
+            if not anomalies.empty:
+                ax2.scatter(anomalies[hookload_col], anomalies.index, label='Аномалии',
+                            color=colors.get('anomaly'), s=anomaly_s, alpha=anomaly_alpha, zorder=5)
+            ax2.legend(loc='upper left')
 
-                # --- Панель 1: Глубины ---
-                ax1.plot(df_chunk[bit_depth_col], y_data, label='Глубина долота',
-                         color=plot_settings.get('bit_depth', {}).get('color', 'green'))
-                ax1.plot(df_chunk[final_bhd_col], y_data, label='Глубина забоя',
-                         color=plot_settings.get('final_bhd', {}).get('color', 'black'), linestyle='--')
-                ax1.set_xlabel('Глубина, м')
-                ax1.set_title('Положение долота')
-                ax1.legend()
-                ax1.grid(True, which='both', linestyle=':', linewidth=0.5)
+            ax2_twin = ax2.twiny()
+            ax2_twin.set_xlabel('Состояние клиньев', fontsize=12, color=colors.get('slips'))
+            ax2_twin.plot(df_chunk[slips_col], df_chunk.index, color=colors.get('slips'), linestyle=':')
+            ax2_twin.tick_params(axis='x', labelcolor=colors.get('slips'))
 
-                # --- Панель 2: Вес на крюке, аномалии и состояние клиньев ---
-                ax2.plot(df_chunk[hookload_col], y_data, label='Факт. вес на крюке',
-                         color=plot_settings.get('hookload', {}).get('color', 'royalblue'), linewidth=1)
-                ax2.plot(df_chunk['predicted_weight'], y_data, label='Модельный вес',
-                         color=plot_settings.get('predicted_weight', {}).get('color', 'skyblue'), linestyle='--',
-                         linewidth=1)
-                ax2.plot(df_chunk[avg_weight_col], y_data, label='Средний вес (блок)',
-                         color=plot_settings.get('avg_weight', {}).get('color', 'orange'), linestyle='-', linewidth=2,
-                         drawstyle='steps-post')
+            # --- Панель 3: Положение талевого блока ---
+            ax3.set_xlabel('Высота, м', fontsize=12)
 
-                anomalies = df_chunk[df_chunk['is_anomaly'] == 1]
-                if not anomalies.empty:
-                    anomaly_style = plot_settings.get('anomaly', {})
-                    ax2.scatter(anomalies[hookload_col], anomalies[time_col], color=anomaly_style.get('color', 'red'),
-                                s=anomaly_style.get('size', 25), zorder=5, label='Аномалия',
-                                alpha=anomaly_style.get('alpha', 0.6))
+            # Создаем серию с NaNs там, где модель не училась
+            trained_height = df_chunk[hook_height_col].copy()
+            trained_height[df_chunk[training_flag_col] == 0] = np.nan
 
-                ax2.set_xlabel('Вес на крюке, т', color=plot_settings.get('hookload', {}).get('color', 'royalblue'))
-                ax2.tick_params(axis='x', labelcolor=plot_settings.get('hookload', {}).get('color', 'royalblue'))
-                ax2.set_title('Анализ веса и состояния клиньев')
-                ax2.grid(True, which='both', linestyle=':', linewidth=0.5)
+            # Рисуем серую линию как подложку
+            ax3.plot(df_chunk[hook_height_col], df_chunk.index, color=colors.get('hook_height_not_trained'), zorder=1)
+            # Поверх рисуем черную линию, которая будет прерываться на NaNs
+            ax3.plot(trained_height, df_chunk.index, color=colors.get('hook_height_trained'), zorder=2, linewidth=2)
 
-                ax2_twin = ax2.twiny()
-                slips_style = plot_settings.get('slips_0123', {})
-                ax2_twin.plot(df_chunk[slips_0123_col], y_data, label='Клинья (0123)',
-                              color=slips_style.get('color', 'black'), drawstyle='steps-post',
-                              alpha=slips_style.get('alpha', 0.7))
-                ax2_twin.set_xlabel('Состояние клиньев', color=slips_style.get('color', 'black'))
-                ax2_twin.tick_params(axis='x', labelcolor=slips_style.get('color', 'black'))
-                ax2_twin.set_xticks([0, 1, 2, 3])
-                ax2_twin.set_xlim(-0.5, 3.5)
+            # Создаем кастомную легенду
+            legend_elements = [
+                Line2D([0], [0], color=colors.get('hook_height_not_trained'), lw=2, label='Высота (не училась)'),
+                Line2D([0], [0], color=colors.get('hook_height_trained'), lw=2, label='Высота (училась)')]
+            ax3.legend(handles=legend_elements)
 
-                lines, labels = ax2.get_legend_handles_labels()
-                lines2, labels2 = ax2_twin.get_legend_handles_labels()
-                ax2.legend(lines + lines2, labels + labels2, loc='upper right')
+            # --- Панель 4: Мех. и гидрав. параметры ---
+            ax4.set_xlabel('Давление, атм', fontsize=12, color=colors.get('pressure'))
+            ax4.plot(df_chunk[pressure_col], df_chunk.index, color=colors.get('pressure'))
+            ax4.tick_params(axis='x', labelcolor=colors.get('pressure'))
+            ax4_twin = ax4.twiny()
+            ax4_twin.set_xlabel('Обороты, об/мин', fontsize=12, color=colors.get('rpm'))
+            ax4_twin.plot(df_chunk[rpm_col], df_chunk.index, color=colors.get('rpm'), linestyle=':')
+            ax4_twin.tick_params(axis='x', labelcolor=colors.get('rpm'))
 
-                # --- Панель 3: Давление и обороты ---
-                ax3_twin = ax3.twiny()
-                pressure_style = plot_settings.get('pressure', {})
-                rpm_style = plot_settings.get('rpm', {})
-                ax3.plot(df_chunk[pressure_col], y_data, label='Давление на входе',
-                         color=pressure_style.get('color', 'firebrick'))
-                ax3_twin.plot(df_chunk[rpm_col], y_data, label='Обороты ротора', color=rpm_style.get('color', 'purple'),
-                              linestyle=':')
-
-                ax3.set_xlabel('Давление, атм', color=pressure_style.get('color', 'firebrick'))
-                ax3_twin.set_xlabel('Обороты, об/мин', color=rpm_style.get('color', 'purple'))
-                ax3.tick_params(axis='x', labelcolor=pressure_style.get('color', 'firebrick'))
-                ax3_twin.tick_params(axis='x', labelcolor=rpm_style.get('color', 'purple'))
-                ax3.set_title('Мех. и гидравлика')
-                ax3.grid(True, which='both', linestyle=':', linewidth=0.5)
-                lines3, labels3 = ax3.get_legend_handles_labels()
-                lines3_twin, labels3_twin = ax3_twin.get_legend_handles_labels()
-                ax3_twin.legend(lines3 + lines3_twin, labels3 + labels3_twin, loc='upper right')
-
-                # --- Панель 4: Высота крюка ---
-                ax4.plot(df_chunk[hook_height_col], y_data, label='Высота крюка',
-                         color=plot_settings.get('hook_height', {}).get('color', 'darkcyan'))
-                ax4.set_xlabel('Высота, м')
-                ax4.set_title('Положение талевого блока')
-                ax4.legend()
-                ax4.grid(True, which='both', linestyle=':', linewidth=0.5)
-
-                start_depth = df_chunk[final_bhd_col].min()
-                end_depth = df_chunk[final_bhd_col].max()
-
-                start_time_obj = df_chunk[time_col].min()
-                end_time_obj = df_chunk[time_col].max()
-                start_date = start_time_obj.date()
-                end_date = end_time_obj.date()
-
-                if start_date == end_date:
-                    time_info_string = f"Дата: {start_date.strftime('%Y-%m-%d')} | Время: {start_time_obj.strftime('%H:%M')} - {end_time_obj.strftime('%H:%M')}"
-                else:
-                    time_info_string = f"Временной интервал: {start_time_obj.strftime('%Y-%m-%d %H:%M')} - {end_time_obj.strftime('%Y-%m-%d %H:%M')}"
-
-            # --- Общие настройки для всех графиков (пустых и с данными) ---
-            ax1.set_ylabel('Время (ЧЧ:ММ)')
-            ax1.yaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-            ax1.set_ylim(chunk_end_time, chunk_start_time)  # Установка границ и инвертирование оси Y
-
+            # --- Общий заголовок ---
+            date_str = start_chunk_time.strftime('%Y-%m-%d')
+            time_interval_str = f"{start_chunk_time.strftime('%H:%M')} - {end_chunk_time.strftime('%H:%M')}"
             fig.suptitle(
-                f'Комплексный анализ буровых параметров (Часть {i + 1}/{num_chunks})\n'
-                f'Интервал глубин: {start_depth:.2f} - {end_depth:.2f} м\n'
-                f'{time_info_string}',
-                fontsize=16
-            )
-            fig.tight_layout(rect=[0, 0, 1, 0.95])
+                f'Комплексный анализ буровых параметров (Часть {i + 1}/{len(time_chunks) - 1})\nДата: {date_str} | Время: {time_interval_str}',
+                fontsize=16)
 
-            chunk_plot_filename = f"{filename}_{i + 1}{file_extension}"
-            plot_path = os.path.join(PIPELINE_CONFIG['OUTPUT_DIR'], chunk_plot_filename)
+            fig.tight_layout(rect=[0, 0.03, 1, 0.95])
 
-            plt.savefig(plot_path, dpi=200, bbox_inches='tight')
+            # --- 6. Сохранение графика ---
+            plot_filename = f"{base_plot_filename}_{i}.png"
+            plot_path = os.path.join(PIPELINE_CONFIG['OUTPUT_DIR'], plot_filename)
+            plt.savefig(plot_path, dpi=300, bbox_inches='tight')
             plt.close(fig)
-            logger.info(f"График {i + 1} сохранен в: {plot_path}")
+
+        # --- 7. Сохранение отчета о пропущенных интервалах ---
+        if skipped_chunks:
+            report_df = pd.DataFrame(skipped_chunks)
+            report_filename = PIPELINE_CONFIG['STEP_12_SKIPPED_CHUNKS_REPORT_FILE']
+            report_path = os.path.join(PIPELINE_CONFIG['OUTPUT_DIR'], report_filename)
+            report_df.to_csv(report_path, index=False, sep=';', encoding='utf-8-sig')
+            logger.info(f"Отчет о пропущенных интервалах сохранен в: {report_path}")
 
         return True
 
