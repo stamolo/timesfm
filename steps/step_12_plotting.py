@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 def run_step_12():
     """
     Шаг 12: Построение комплексных графиков для визуального анализа.
+    - Разнесены оси для глубины долота и забоя.
+    - Добавлена возможность фиксации масштаба для высоты крюка.
+    - Добавлена возможность фиксации масштаба для осей давления и оборотов.
+    - Гарантирован минимальный диапазон в 10т для оси веса на крюке.
     """
     logger.info("---[ Шаг 12: Построение итоговых графиков ]---")
     try:
@@ -53,6 +57,38 @@ def run_step_12():
         df[time_col] = pd.to_datetime(df[time_col].astype(str).str.replace(',', '.'))
         df.set_index(time_col, inplace=True)
 
+        # --- Расчет фиксированных границ для осей ---
+        pressure_limits = None
+        rpm_limits = None
+        fixed_scale = plot_settings.get('fixed_pressure_rpm_scale', False)
+
+        if fixed_scale:
+            percentile = plot_settings.get('scale_percentile', 95.0)
+            logger.info(f"Включен фиксированный масштаб для Давления/Оборотов с {percentile}-м перцентилем.")
+
+            if pressure_col in df.columns:
+                pressure_upper_bound = df[pressure_col].quantile(percentile / 100.0)
+                pressure_limits = (-5, pressure_upper_bound * 1.05)
+                logger.info(f"Границы для Давления установлены: ({pressure_limits[0]}, {pressure_limits[1]:.2f})")
+            else:
+                logger.warning(
+                    f"Столбец для давления '{pressure_col}' не найден. Фиксированный масштаб для него не будет применен.")
+
+            if rpm_col in df.columns:
+                rpm_upper_bound = df[rpm_col].quantile(percentile / 100.0)
+                rpm_limits = (-5, rpm_upper_bound * 1.05)
+                logger.info(f"Границы для Оборотов установлены: ({rpm_limits[0]}, {rpm_limits[1]:.2f})")
+            else:
+                logger.warning(
+                    f"Столбец для оборотов '{rpm_col}' не найден. Фиксированный масштаб для него не будет применен.")
+
+        # Получение настроек для жестких границ высоты крюка
+        fixed_hook_height_scale = plot_settings.get('fixed_hook_height_scale', False)
+        hook_height_min = plot_settings.get('hook_height_min', 0)
+        hook_height_max = plot_settings.get('hook_height_max', 35)
+        if fixed_hook_height_scale:
+            logger.info(f"Включен фиксированный масштаб для Высоты крюка: от {hook_height_min} до {hook_height_max} м.")
+
         # --- 4. Разбивка на временные интервалы ---
         chunk_minutes = PIPELINE_CONFIG.get('STEP_12_CHUNK_MINUTES', 120)
         start_time = df.index.min().floor('h')
@@ -82,11 +118,15 @@ def run_step_12():
             main_ax.yaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
             main_ax.set_ylabel('Время (чч:мм)', fontsize=12)
 
-            # --- Панель 1: Положение долота ---
-            ax1.set_xlabel('Глубина, м', fontsize=12)
+            # --- Панель 1: Положение долота и забоя ---
+            ax1.set_xlabel('Глубина долота, м', fontsize=12, color=colors.get('bit_depth'))
             ax1.plot(df_chunk[bit_depth_col], df_chunk.index, label='Глубина долота', color=colors.get('bit_depth'))
-            ax1.plot(df_chunk[bhd_col], df_chunk.index, label='Глубина забоя', color=colors.get('bhd'), linestyle='--')
-            ax1.legend()
+            ax1.tick_params(axis='x', labelcolor=colors.get('bit_depth'))
+
+            ax1_twin = ax1.twiny()
+            ax1_twin.set_xlabel('Глубина забоя, м', fontsize=12, color=colors.get('bhd'))
+            ax1_twin.plot(df_chunk[bhd_col], df_chunk.index, color=colors.get('bhd'), linestyle='--')
+            ax1_twin.tick_params(axis='x', labelcolor=colors.get('bhd'))
 
             # --- Панель 2: Анализ веса и состояние клиньев ---
             ax2.set_xlabel('Вес на крюке, т', fontsize=12)
@@ -99,6 +139,28 @@ def run_step_12():
             if not anomalies.empty:
                 ax2.scatter(anomalies[hookload_col], anomalies.index, label='Аномалии',
                             color=colors.get('anomaly'), s=anomaly_s, alpha=anomaly_alpha, zorder=5)
+
+            # --- НОВАЯ ЛОГИКА: Гарантированный минимальный диапазон для оси веса ---
+            all_weight_data = pd.concat([
+                df_chunk[hookload_col],
+                df_chunk[predicted_hookload_col],
+                df_chunk[avg_hookload_col]
+            ]).dropna()
+
+            if not all_weight_data.empty:
+                min_val = all_weight_data.min()
+                max_val = all_weight_data.max()
+                current_range = max_val - min_val
+                required_min_range = 10.0
+
+                if current_range < required_min_range:
+                    # Если диапазон меньше 10т, центрируем его и расширяем до 10т
+                    mid_point = (min_val + max_val) / 2
+                    lower_bound = mid_point - (required_min_range / 2)
+                    upper_bound = mid_point + (required_min_range / 2)
+                    ax2.set_xlim(left=lower_bound, right=upper_bound)
+            # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
+
             ax2.legend(loc='upper left')
 
             ax2_twin = ax2.twiny()
@@ -109,16 +171,16 @@ def run_step_12():
             # --- Панель 3: Положение талевого блока ---
             ax3.set_xlabel('Высота, м', fontsize=12)
 
-            # Создаем серию с NaNs там, где модель не училась
             trained_height = df_chunk[hook_height_col].copy()
             trained_height[df_chunk[training_flag_col] == 0] = np.nan
 
-            # Рисуем серую линию как подложку
             ax3.plot(df_chunk[hook_height_col], df_chunk.index, color=colors.get('hook_height_not_trained'), zorder=1)
-            # Поверх рисуем черную линию, которая будет прерываться на NaNs
             ax3.plot(trained_height, df_chunk.index, color=colors.get('hook_height_trained'), zorder=2, linewidth=2)
 
-            # Создаем кастомную легенду
+            # Применение жестких границ для высоты крюка
+            if fixed_hook_height_scale:
+                ax3.set_xlim(hook_height_min, hook_height_max)
+
             legend_elements = [
                 Line2D([0], [0], color=colors.get('hook_height_not_trained'), lw=2, label='Высота (не училась)'),
                 Line2D([0], [0], color=colors.get('hook_height_trained'), lw=2, label='Высота (училась)')]
@@ -128,14 +190,19 @@ def run_step_12():
             ax4.set_xlabel('Давление, атм', fontsize=12, color=colors.get('pressure'))
             ax4.plot(df_chunk[pressure_col], df_chunk.index, color=colors.get('pressure'))
             ax4.tick_params(axis='x', labelcolor=colors.get('pressure'))
+            if fixed_scale and pressure_limits:
+                ax4.set_xlim(pressure_limits)
+
             ax4_twin = ax4.twiny()
             ax4_twin.set_xlabel('Обороты, об/мин', fontsize=12, color=colors.get('rpm'))
             ax4_twin.plot(df_chunk[rpm_col], df_chunk.index, color=colors.get('rpm'), linestyle=':')
             ax4_twin.tick_params(axis='x', labelcolor=colors.get('rpm'))
+            if fixed_scale and rpm_limits:
+                ax4_twin.set_xlim(rpm_limits)
 
             # --- Общий заголовок ---
             date_str = start_chunk_time.strftime('%Y-%m-%d')
-            time_interval_str = f"{start_chunk_time.strftime('%H:%M')} - {end_chunk_time.strftime('%H:%M')}"
+            time_interval_str = f"{start_chunk_time.strftime('%H-%M')} - {end_chunk_time.strftime('%H-%M')}"
             fig.suptitle(
                 f'Комплексный анализ буровых параметров (Часть {i + 1}/{len(time_chunks) - 1})\nДата: {date_str} | Время: {time_interval_str}',
                 fontsize=16)
@@ -161,4 +228,3 @@ def run_step_12():
     except Exception as e:
         logger.error(f"Ошибка на Шаге 12: {e}", exc_info=True)
         return False
-

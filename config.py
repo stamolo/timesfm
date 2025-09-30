@@ -19,11 +19,11 @@ PIPELINE_CONFIG = {
     # Общие
     "OUTPUT_DIR": "output",
     "MODEL_PATH": r"D:\models\checkpoints_k\best_model_kl.pt",
-    "START_PIPELINE_FROM_STEP": 12, # С какого шага начинать пайплайн (1-12)
+    "START_PIPELINE_FROM_STEP": 11,  # С какого шага начинать пайплайн (1-12)
 
     # Шаг 1: Выгрузка
     "USE_EXISTING_STEP_1_OUTPUT": False,
-    "TOP_N": 300000,
+    "TOP_N": 350000,
     "SORT_COLUMN": "Время_204",
     "ALL_COLUMNS": [
         "Время_204", "Вес_на_крюке_28", "Высота_крюка_103",
@@ -109,8 +109,11 @@ PIPELINE_CONFIG = {
     ],
     "STEP_11_SLIPS_COLUMN": "клинья_0123",
     "STEP_11_ABOVE_BHD_COLUMN": "Над забоем, м (бинарный)",
-    "STEP_11_MIN_WINDOW_SIZE": 300, # Мин. кол-во точек для обучения
-    "STEP_11_MAX_WINDOW_SIZE": 1000, # Макс. размер окна, которое смотрит назад
+    "STEP_11_BIT_DEPTH_COLUMN": "Глубина_долота_35",  # Имя столбца для проверки глубины
+    "STEP_11_ENABLE_MIN_DEPTH_CHECK": True,  # Включить/выключить проверку
+    "STEP_11_MIN_DEPTH_THRESHOLD": 100.0,  # Порог глубины в метрах для начала анализа
+    "STEP_11_MIN_WINDOW_SIZE": 300,  # Мин. кол-во точек для обучения
+    "STEP_11_MAX_WINDOW_SIZE": 3000,  # Макс. размер окна, которое смотрит назад
     "STEP_11_WINDOW_STEP": 10,
     "STEP_11_ANOMALY_THRESHOLD": 10.0,
     "STEP_11_CONSECUTIVE_ANOMALIES_MIN": 3,
@@ -119,22 +122,24 @@ PIPELINE_CONFIG = {
     "STEP_11_PREDICTION_MIN_CLIP": 0,
     "STEP_11_PREDICTION_MAX_CLIP": 150,
     "STEP_11_TIME_GAP_THRESHOLD_MINUTES": 10,
-    "STEP_11_MIN_CONTINUOUS_TRAVEL_EACH_DIRECTION": 5.0, # Мин. суммарный ход крюка вверх И вниз для переобучения
+    "STEP_11_MIN_CONTINUOUS_TRAVEL_EACH_DIRECTION": 3.0,  # Мин. суммарный ход крюка вверх И вниз для переобучения
+    "STEP_11_ENABLE_WEIGHT_OVERRIDE": True,
+    "STEP_11_MIN_WEIGHT_OVERRIDE": 35.0,
+
+    # --- ПАРАМЕТРЫ ДЛЯ ФИЛЬТРАЦИИ ПО ДАВЛЕНИЮ ---
+    "STEP_11_PRESSURE_COLUMN": "Давление_на_входе_18",  # Имя столбца с давлением
+    "STEP_11_ENABLE_PRESSURE_FILTER": True,  # Включить/выключить фильтр
+    "STEP_11_PRESSURE_THRESHOLD": 30.0,  # Порог давления в атмосферах
+    # ---------------------------------------------------
+
     "STEP_11_TRAINING_FLAG_COLUMN": "Модель_обучалась_флаг",
     "STEP_11_OUTPUT_FILE": "step_11_anomaly_detection.csv",
 
     # Шаг 12: Построение итоговых графиков
     "STEP_12_INPUT_FILE": "step_11_anomaly_detection.csv",
     "STEP_12_PLOT_FILE_PREFIX": "step_12_anomaly_plot",
-    "STEP_12_CHUNK_MINUTES": 120,
+    "STEP_12_CHUNK_MINUTES": 60,
     "STEP_12_SKIPPED_CHUNKS_REPORT_FILE": "step_12_skipped_chunks_report.csv",
-
-    # Шаг 12: Построение итоговых графиков
-    "STEP_12_INPUT_FILE": "step_11_anomaly_detection.csv",
-    "STEP_12_PLOT_FILE_PREFIX": "step_12_anomaly_plot",
-    "STEP_12_CHUNK_MINUTES": 120,
-    "STEP_12_SKIPPED_CHUNKS_REPORT_FILE": "step_12_skipped_chunks_report.csv",
-
     "STEP_12_PLOT_SETTINGS": {
         "bit_depth_col": "Глубина_долота_35",
         "bhd_col": "Глубина_забоя_36",
@@ -146,7 +151,13 @@ PIPELINE_CONFIG = {
         "rpm_col": "Обороты_ротора_72",
         "hook_height_col": "Высота_крюка_103",
         "training_flag_col": "Модель_обучалась_флаг",
-
+        # --- ОБНОВЛЕННЫЕ ПАРАМЕТРЫ ---
+        "fixed_pressure_rpm_scale": True,  # Вкл/выкл фиксированный масштаб для давления/оборотов
+        "scale_percentile": 95.0,  # Уровень перцентиля для расчета верхней границы
+        "fixed_hook_height_scale": True,  # Вкл/выкл фиксированный масштаб для высоты крюка
+        "hook_height_min": 0,  # Нижняя граница для высоты крюка
+        "hook_height_max": 35,  # Верхняя граница для высоты крюка
+        # --------------------------------
         "colors": {
             "bit_depth": "green",
             "bhd": "black",
@@ -164,6 +175,3 @@ PIPELINE_CONFIG = {
         "anomaly_marker_alpha": 0.6
     }
 }
-
-
-

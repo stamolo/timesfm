@@ -49,6 +49,8 @@ def run_step_11():
     - Учитывает разрывы в данных для сброса модели.
     - Обучается только на участках с достаточной динамикой движения крюка.
     - Использует динамический размер окна для обучения.
+    - Добавлена проверка минимальной глубины долота с противоусловием по весу.
+    - Добавлена фильтрация по давлению для обучения и поиска аномалий.
     """
     logger.info("---[ Шаг 11: Поиск аномалий (динамическое окно, проверка динамики и разрывов) ]---")
     try:
@@ -75,7 +77,38 @@ def run_step_11():
         min_travel = PIPELINE_CONFIG.get('STEP_11_MIN_CONTINUOUS_TRAVEL_EACH_DIRECTION', 10.0)
         training_flag_col = PIPELINE_CONFIG.get('STEP_11_TRAINING_FLAG_COLUMN', 'Модель_обучалась_флаг')
 
-        # --- ИСПРАВЛЕНИЕ: Загрузка параметров обрезки ---
+        # --- ПАРАМЕТРЫ ДЛЯ ПРОВЕРКИ ГЛУБИНЫ И ВЕСА ---
+        bit_depth_col = PIPELINE_CONFIG.get('STEP_11_BIT_DEPTH_COLUMN')
+        enable_depth_check = PIPELINE_CONFIG.get('STEP_11_ENABLE_MIN_DEPTH_CHECK', False)
+        min_depth_threshold = PIPELINE_CONFIG.get('STEP_11_MIN_DEPTH_THRESHOLD', 100.0)
+        enable_weight_override = PIPELINE_CONFIG.get('STEP_11_ENABLE_WEIGHT_OVERRIDE', False)
+        min_weight_override = PIPELINE_CONFIG.get('STEP_11_MIN_WEIGHT_OVERRIDE', 35.0)
+
+        # --- НОВЫЕ ПАРАМЕТРЫ ДЛЯ ФИЛЬТРАЦИИ ПО ДАВЛЕНИЮ ---
+        pressure_col = PIPELINE_CONFIG.get('STEP_11_PRESSURE_COLUMN')
+        enable_pressure_filter = PIPELINE_CONFIG.get('STEP_11_ENABLE_PRESSURE_FILTER', False)
+        pressure_threshold = PIPELINE_CONFIG.get('STEP_11_PRESSURE_THRESHOLD', 200.0)
+
+        if enable_pressure_filter:
+            logger.info(
+                f"Включен фильтр по давлению. Данные, где '{pressure_col}' > {pressure_threshold} атм, будут игнорироваться.")
+            if pressure_col not in df.columns:
+                logger.error(f"Столбец для фильтрации по давлению '{pressure_col}' не найден. Фильтр будет отключен.")
+                enable_pressure_filter = False
+
+        if enable_depth_check:
+            logger.info(
+                f"Включена проверка минимальной глубины. Аномалии не будут распознаваться, если '{bit_depth_col}' < {min_depth_threshold} м.")
+            if bit_depth_col not in df.columns:
+                logger.error(f"Столбец для проверки глубины '{bit_depth_col}' не найден. Проверка будет отключена.")
+                enable_depth_check = False
+            if enable_weight_override:
+                logger.info(f"...ИСКЛЮЧЕНИЕ: анализ будет выполнен, если '{target_col}' > {min_weight_override} т.")
+                if target_col not in df.columns:
+                    logger.error(f"Столбец для проверки веса '{target_col}' не найден. Противоусловие будет отключено.")
+                    enable_weight_override = False
+
+        # Загрузка параметров обрезки
         use_clip = PIPELINE_CONFIG.get('STEP_11_USE_PREDICTION_CLIP', False)
         min_clip = PIPELINE_CONFIG.get('STEP_11_PREDICTION_MIN_CLIP', 0)
         max_clip = PIPELINE_CONFIG.get('STEP_11_PREDICTION_MAX_CLIP', 150)
@@ -127,6 +160,11 @@ def run_step_11():
 
                 clean_train_window = train_window_full[train_window_full['is_anomaly'] == 0]
 
+                # --- НОВАЯ ЛОГИКА: Фильтрация обучающего окна по давлению ---
+                if enable_pressure_filter:
+                    clean_train_window = clean_train_window[clean_train_window[pressure_col] <= pressure_threshold]
+                # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
+
                 # Проверка условий для переобучения
                 should_retrain = False
                 if len(clean_train_window) >= min_window_size:
@@ -145,19 +183,43 @@ def run_step_11():
                     continue
 
                 predict_block = block_df.iloc[i: i + window_step]
-                predictions = model.predict(predict_block[feature_cols])
 
-                # --- ИСПРАВЛЕНИЕ: Применение обрезки, если опция включена ---
+                # --- ОБНОВЛЕННАЯ ЛОГИКА: ФИЛЬТРАЦИЯ БЛОКА ДЛЯ АНАЛИЗА ---
+                analysis_block = predict_block
+
+                # 1. Фильтр по давлению
+                if enable_pressure_filter:
+                    # Пропускаем только те строки, где давление НЕ превышает порог
+                    analysis_block = analysis_block[analysis_block[pressure_col] <= pressure_threshold]
+
+                # 2. Фильтр по глубине и весу (если блок еще не пуст)
+                if not analysis_block.empty and enable_depth_check:
+                    depth_mask = analysis_block[bit_depth_col] >= min_depth_threshold
+                    if enable_weight_override:
+                        weight_mask = analysis_block[target_col] > min_weight_override
+                        final_mask = depth_mask | weight_mask
+                    else:
+                        final_mask = depth_mask
+                    analysis_block = analysis_block[final_mask]
+
+                # Если после всех фильтраций блок пуст, переходим к следующей итерации
+                if analysis_block.empty:
+                    continue
+                # --- КОНЕЦ ОБНОВЛЕННОЙ ЛОГИКИ ---
+
+                predictions = model.predict(analysis_block[feature_cols])
+
+                # Применение обрезки, если опция включена
                 if use_clip:
                     predictions = np.clip(predictions, min_clip, max_clip)
 
-                df.loc[predict_block.index, 'predicted_weight'] = predictions
-                df.loc[predict_block.index, 'residual'] = predict_block[target_col] - predictions
+                df.loc[analysis_block.index, 'predicted_weight'] = predictions
+                df.loc[analysis_block.index, 'residual'] = analysis_block[target_col] - predictions
 
-                potential_anomalies_mask = abs(df.loc[predict_block.index, 'residual']) > anomaly_threshold
+                potential_anomalies_mask = abs(df.loc[analysis_block.index, 'residual']) > anomaly_threshold
 
                 if potential_anomalies_mask.any():
-                    potential_anomaly_indices = predict_block.index[potential_anomalies_mask]
+                    potential_anomaly_indices = analysis_block.index[potential_anomalies_mask]
                     block_df.loc[potential_anomaly_indices, 'potential_anomaly_flag'] = 1
 
                     grouper = (abs(df['residual']) > anomaly_threshold).diff().ne(0).cumsum()
@@ -183,4 +245,3 @@ def run_step_11():
     except Exception as e:
         logger.error(f"Ошибка на Шаге 11: {e}", exc_info=True)
         return False
-
