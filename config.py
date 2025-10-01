@@ -19,11 +19,11 @@ PIPELINE_CONFIG = {
     # Общие
     "OUTPUT_DIR": "output",
     "MODEL_PATH": r"D:\models\checkpoints_k\best_model_kl.pt",
-    "START_PIPELINE_FROM_STEP": 11,  # С какого шага начинать пайплайн (1-12)
+    "START_PIPELINE_FROM_STEP": 12,  # С какого шага начинать пайплайн (1-12)
 
     # Шаг 1: Выгрузка
     "USE_EXISTING_STEP_1_OUTPUT": False,
-    "TOP_N": 350000,
+    "TOP_N": 35000000,
     "SORT_COLUMN": "Время_204",
     "ALL_COLUMNS": [
         "Время_204", "Вес_на_крюке_28", "Высота_крюка_103",

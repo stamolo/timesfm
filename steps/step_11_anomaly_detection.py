@@ -130,9 +130,11 @@ def run_step_11():
             logger.info(f"Включена функция сброса модели при разрыве данных более {time_gap_minutes} минут.")
             time_diffs = df_filtered[time_col].diff().dt.total_seconds() / 60
             break_indices = df_filtered.index[time_diffs > time_gap_minutes].tolist()
-            last_index = 0
+            last_index = df_filtered.index[0] if not df_filtered.empty else 0
             for end_index in break_indices:
-                data_blocks.append(df_filtered.loc[last_index:end_index - 1].copy())
+                # Находим реальный индекс строки в df_filtered, который соответствует end_index из df
+                loc_end = df_filtered.index.get_loc(end_index)
+                data_blocks.append(df_filtered.loc[last_index:df_filtered.index[loc_end - 1]].copy())
                 last_index = end_index
             data_blocks.append(df_filtered.loc[last_index:].copy())
         else:
@@ -158,14 +160,15 @@ def run_step_11():
             is_model_fitted = False
             last_training_time = None  # Для отслеживания времени последнего обучения
 
+            # *** ОПТИМИЗАЦИЯ: Инициализируем столбцы в локальном блоке для ускорения расчетов ***
+            block_df.loc[:, 'predicted_weight'] = np.nan
+            block_df.loc[:, 'residual'] = np.nan
             block_df.loc[:, 'is_anomaly'] = 0
-            block_df.loc[:, 'potential_anomaly_flag'] = 0
 
             for i in tqdm(range(min_window_size, len(block_df), window_step),
                           desc=f"Анализ блока {block_num}/{total_blocks}"):
 
                 # --- НОВАЯ ЛОГИКА: ПРОВЕРКА УСТАРЕВАНИЯ МОДЕЛИ ---
-                # Если модель обучена, проверяем, не прошло ли слишком много времени с последнего обучения
                 if is_model_fitted and enable_stale_check and last_training_time:
                     current_time = block_df[time_col].iloc[i]
                     time_diff_minutes = (current_time - last_training_time).total_seconds() / 60
@@ -227,7 +230,6 @@ def run_step_11():
                         final_mask = depth_mask
                     analysis_block = analysis_block[final_mask]
 
-                # Если после всех фильтраций блок пуст, переходим к следующей итерации
                 if analysis_block.empty:
                     continue
                 # --- КОНЕЦ ОБНОВЛЕННОЙ ЛОГИКИ ---
@@ -238,24 +240,40 @@ def run_step_11():
                 if use_clip:
                     predictions = np.clip(predictions, min_clip, max_clip)
 
+                # *** ОПТИМИЗАЦИЯ: Обновляем данные в обоих DataFrame ***
+                residuals = analysis_block[target_col] - predictions
                 df.loc[analysis_block.index, 'predicted_weight'] = predictions
-                df.loc[analysis_block.index, 'residual'] = analysis_block[target_col] - predictions
+                df.loc[analysis_block.index, 'residual'] = residuals
+                block_df.loc[analysis_block.index, 'predicted_weight'] = predictions
+                block_df.loc[analysis_block.index, 'residual'] = residuals
 
-                potential_anomalies_mask = abs(df.loc[analysis_block.index, 'residual']) > anomaly_threshold
+                potential_anomalies_mask = abs(residuals) > anomaly_threshold
 
                 if potential_anomalies_mask.any():
-                    potential_anomaly_indices = analysis_block.index[potential_anomalies_mask]
-                    block_df.loc[potential_anomaly_indices, 'potential_anomaly_flag'] = 1
+                    # *** ОПТИМИЗАЦИЯ: Вся логика поиска последовательностей теперь работает
+                    # с `block_df`, который имеет фиксированный и относительно небольшой размер.
+                    # Это предотвращает замедление по мере обработки всего файла. ***
 
-                    grouper = (abs(df['residual']) > anomaly_threshold).diff().ne(0).cumsum()
-                    block_sizes = df.loc[potential_anomaly_indices].groupby(grouper.loc[potential_anomaly_indices])[
-                        'residual'].transform('size')
+                    # 1. Создаем маску потенциальных аномалий для всего блока
+                    potential_mask_in_block = abs(block_df['residual']) > anomaly_threshold
 
-                    actual_anomaly_indices = block_sizes[block_sizes >= min_consecutive].index
+                    # 2. Создаем группы из смежных одинаковых значений в этой маске
+                    grouper = potential_mask_in_block.diff().ne(0).cumsum()
 
-                    if not actual_anomaly_indices.empty:
-                        df.loc[actual_anomaly_indices, 'is_anomaly'] = 1
-                        block_df.loc[actual_anomaly_indices, 'is_anomaly'] = 1
+                    # 3. Получаем ID групп, которые содержат аномалии
+                    anomaly_group_ids = grouper[potential_mask_in_block]
+
+                    if not anomaly_group_ids.empty:
+                        # 4. Рассчитываем размеры только для этих аномальных групп
+                        block_sizes = anomaly_group_ids.groupby(anomaly_group_ids).transform('size')
+
+                        # 5. Находим индексы, где размер группы соответствует минимальному порогу
+                        actual_anomaly_indices = block_sizes[block_sizes >= min_consecutive].index
+
+                        if not actual_anomaly_indices.empty:
+                            # 6. Обновляем флаги в обоих DataFrame
+                            df.loc[actual_anomaly_indices, 'is_anomaly'] = 1
+                            block_df.loc[actual_anomaly_indices, 'is_anomaly'] = 1
 
         logger.info(f"Найдено {df['is_anomaly'].sum()} итоговых аномальных точек.")
 
