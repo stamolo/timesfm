@@ -19,11 +19,11 @@ PIPELINE_CONFIG = {
     # Общие
     "OUTPUT_DIR": "output",
     "MODEL_PATH": r"D:\models\checkpoints_k\best_model_kl.pt",
-    "START_PIPELINE_FROM_STEP": 12,  # С какого шага начинать пайплайн (1-12)
+    "START_PIPELINE_FROM_STEP": 11,  # С какого шага начинать пайплайн (1-12)
 
     # Шаг 1: Выгрузка
     "USE_EXISTING_STEP_1_OUTPUT": False,
-    "TOP_N": 35000000,
+    "TOP_N": 500000,
     "SORT_COLUMN": "Время_204",
     "ALL_COLUMNS": [
         "Время_204", "Вес_на_крюке_28", "Высота_крюка_103",
@@ -100,23 +100,33 @@ PIPELINE_CONFIG = {
     "STEP_10_OUTPUT_FILE": "step_10_final_dataset.csv",
 
     # Шаг 11: Поиск аномалий веса
+    # --- НОВЫЕ ПАРАМЕТРЫ ВЫБОРА МОДЕЛИ ---
+    "STEP_11_MODEL_TYPE": "ridge",  # Варианты: "linear", "ridge", "lasso", "elasticnet"
+    "STEP_11_MODEL_PARAMS": {
+        "ridge": {"alpha": 100.0},          # Параметр регуляризации для Ridge (L2)
+        "lasso": {"alpha": 0.1},          # Параметр регуляризации для Lasso (L1)
+        "elasticnet": {"alpha": 1.0, "l1_ratio": 0.5} # Параметры для ElasticNet (L1+L2)
+    },
+    # ------------------------------------
     "STEP_11_TARGET_COLUMN": "Вес_на_крюке_28",
     "STEP_11_FEATURE_COLUMNS": [
         "Скорость_инструмента",
         #"Скорость_инструмента_кв_знак",
-        "Глубина_долота_35"
+        "Глубина_долота_35",
+        "Давление_на_входе_18",
+        "Обороты_ротора_72"
         #"Глубина_долота_кв"
     ],
     "STEP_11_SLIPS_COLUMN": "клинья_0123",
     "STEP_11_ABOVE_BHD_COLUMN": "Над забоем, м (бинарный)",
     "STEP_11_BIT_DEPTH_COLUMN": "Глубина_долота_35",  # Имя столбца для проверки глубины
     "STEP_11_ENABLE_MIN_DEPTH_CHECK": True,  # Включить/выключить проверку
-    "STEP_11_MIN_DEPTH_THRESHOLD": 100.0,  # Порог глубины в метрах для начала анализа
+    "STEP_11_MIN_DEPTH_THRESHOLD": 80.0,  # Порог глубины в метрах для начала анализа
     "STEP_11_MIN_WINDOW_SIZE": 300,  # Мин. кол-во точек для обучения
     "STEP_11_MAX_WINDOW_SIZE": 3000,  # Макс. размер окна, которое смотрит назад
     "STEP_11_WINDOW_STEP": 10,
-    "STEP_11_ANOMALY_THRESHOLD": 10.0,
-    "STEP_11_CONSECUTIVE_ANOMALIES_MIN": 3,
+    "STEP_11_ANOMALY_THRESHOLD": 5.0,
+    "STEP_11_CONSECUTIVE_ANOMALIES_MIN": 1,
     "STEP_11_EXCLUDE_ALL_POTENTIAL_ANOMALIES": False,
     "STEP_11_USE_PREDICTION_CLIP": True,
     "STEP_11_PREDICTION_MIN_CLIP": 0,
@@ -126,15 +136,15 @@ PIPELINE_CONFIG = {
     "STEP_11_ENABLE_WEIGHT_OVERRIDE": True,
     "STEP_11_MIN_WEIGHT_OVERRIDE": 35.0,
 
-    # --- НОВЫЙ КРИТЕРИЙ: СБРОС УСТАРЕВШЕЙ МОДЕЛИ ---
-    "STEP_11_ENABLE_MODEL_STALE_CHECK": True,           # Включить/выключить проверку
-    "STEP_11_MODEL_STALE_THRESHOLD_MINUTES": 20,        # Порог "устаревания" в минутах
+    # --- СБРОС УСТАРЕВШЕЙ МОДЕЛИ ---
+    "STEP_11_ENABLE_MODEL_STALE_CHECK": False,          # Включить/выключить проверку
+    "STEP_11_MODEL_STALE_THRESHOLD_MINUTES": 120,      # Порог "устаревания" в минутах
     # ---------------------------------------------------
 
     # --- ПАРАМЕТРЫ ДЛЯ ФИЛЬТРАЦИИ ПО ДАВЛЕНИЮ ---
     "STEP_11_PRESSURE_COLUMN": "Давление_на_входе_18",  # Имя столбца с давлением
-    "STEP_11_ENABLE_PRESSURE_FILTER": True,  # Включить/выключить фильтр
-    "STEP_11_PRESSURE_THRESHOLD": 5.0,  # Порог давления в атмосферах
+    "STEP_11_ENABLE_PRESSURE_FILTER": False,  # Включить/выключить фильтр
+    "STEP_11_PRESSURE_THRESHOLD": 20.0,  # Порог давления в атмосферах
     # ---------------------------------------------------
 
     "STEP_11_TRAINING_FLAG_COLUMN": "Модель_обучалась_флаг",

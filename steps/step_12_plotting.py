@@ -223,7 +223,7 @@ def run_step_12():
         logger.info(f"-> Шаг 4.2: Подготовлено {len(tasks)} задач.")
 
         # --- 5. Параллельное создание графиков ---
-        num_processes = min(multiprocessing.cpu_count(), len(tasks))
+        num_processes = min(multiprocessing.cpu_count()-1, len(tasks))
         logger.info(f"Запуск параллельной генерации {len(tasks)} графиков на {num_processes} процессах...")
 
         # ОПТИМИЗАЦИЯ: Используем initializer для однократной передачи df в каждый процесс

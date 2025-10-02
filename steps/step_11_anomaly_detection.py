@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 import logging
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LinearRegression, Ridge, Lasso, ElasticNet
 from tqdm import tqdm
 from config import PIPELINE_CONFIG
 
@@ -59,6 +59,12 @@ def run_step_11():
         step_10_path = os.path.join(PIPELINE_CONFIG['OUTPUT_DIR'], PIPELINE_CONFIG['STEP_10_OUTPUT_FILE'])
         df = pd.read_csv(step_10_path, sep=';', decimal=',', encoding='utf-8')
         logger.info(f"Загружен файл {step_10_path}, содержащий {len(df)} строк.")
+
+        # --- НОВЫЕ ПАРАМЕТРЫ ДЛЯ ВЫБОРА МОДЕЛИ ---
+        model_type = PIPELINE_CONFIG.get('STEP_11_MODEL_TYPE', 'linear').lower()
+        model_params = PIPELINE_CONFIG.get('STEP_11_MODEL_PARAMS', {})
+        logger.info(f"Выбрана модель для анализа: {model_type}")
+        # ---------------------------------------------
 
         target_col = PIPELINE_CONFIG['STEP_11_TARGET_COLUMN']
         feature_cols = PIPELINE_CONFIG['STEP_11_FEATURE_COLUMNS']
@@ -156,7 +162,31 @@ def run_step_11():
 
             logger.info(f"Обработка блока данных #{block_num} из {total_blocks}, размер: {len(block_df)} точек.")
 
-            model = LinearRegression()
+            # --- Фабрика моделей ---
+            try:
+                if model_type == 'ridge':
+                    params = model_params.get('ridge', {})
+                    model = Ridge(**params)
+                    logger.info(f"Создана модель Ridge с параметрами: {params}")
+                elif model_type == 'lasso':
+                    params = model_params.get('lasso', {})
+                    model = Lasso(**params)
+                    logger.info(f"Создана модель Lasso с параметрами: {params}")
+                elif model_type == 'elasticnet':
+                    params = model_params.get('elasticnet', {})
+                    model = ElasticNet(**params)
+                    logger.info(f"Создана модель ElasticNet с параметрами: {params}")
+                elif model_type == 'linear':
+                    model = LinearRegression()
+                    logger.info("Создана стандартная модель LinearRegression.")
+                else:
+                    logger.warning(f"Неизвестный тип модели '{model_type}'. Будет использована LinearRegression по умолчанию.")
+                    model = LinearRegression()
+            except Exception as e:
+                logger.error(f"Ошибка при создании модели типа '{model_type}': {e}. Будет использована LinearRegression по умолчанию.")
+                model = LinearRegression()
+            # --- Конец фабрики моделей ---
+
             is_model_fitted = False
             last_training_time = None  # Для отслеживания времени последнего обучения
 
