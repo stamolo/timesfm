@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import logging
 from sklearn.linear_model import LinearRegression, Ridge, Lasso, ElasticNet
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from tqdm import tqdm
 from config import PIPELINE_CONFIG
 
@@ -46,12 +47,16 @@ def find_max_continuous_travel(travel_diffs):
 def run_step_11():
     """
     Шаг 11: Построение регрессионной модели в скользящем окне для поиска аномалий.
+    - Добавлена возможность нормализации данных перед обучением.
     - Учитывает разрывы в данных для сброса модели.
     - Обучается только на участках с достаточной динамикой движения крюка.
     - Использует динамический размер окна для обучения.
     - Добавлена проверка минимальной глубины долота с противоусловием по весу.
     - Добавлена фильтрация по давлению для обучения и поиска аномалий.
     - Добавлена проверка на "устаревание" модели: если модель не переобучалась дольше X минут, она сбрасывается.
+    - Добавлена балансировка обучающей выборки для устранения перекоса в сторону статичных данных.
+    - ИЗМЕНЕНИЕ: Добавлена возможность включать/исключать аномалии из обучающей выборки.
+    - ИЗМЕНЕНИЕ: Добавлен расчет вклада каждого признака в предсказание для линейных моделей.
     """
     logger.info("---[ Шаг 11: Поиск аномалий (динамическое окно, проверка динамики и разрывов) ]---")
     try:
@@ -60,10 +65,12 @@ def run_step_11():
         df = pd.read_csv(step_10_path, sep=';', decimal=',', encoding='utf-8')
         logger.info(f"Загружен файл {step_10_path}, содержащий {len(df)} строк.")
 
-        # --- НОВЫЕ ПАРАМЕТРЫ ДЛЯ ВЫБОРА МОДЕЛИ ---
+        # --- ПАРАМЕТРЫ ВЫБОРА МОДЕЛИ И НОРМАЛИЗАЦИИ ---
         model_type = PIPELINE_CONFIG.get('STEP_11_MODEL_TYPE', 'linear').lower()
         model_params = PIPELINE_CONFIG.get('STEP_11_MODEL_PARAMS', {})
+        normalization_type = PIPELINE_CONFIG.get('STEP_11_NORMALIZATION_TYPE', 'none').lower()
         logger.info(f"Выбрана модель для анализа: {model_type}")
+        logger.info(f"Выбран тип нормализации данных: {normalization_type}")
         # ---------------------------------------------
 
         target_col = PIPELINE_CONFIG['STEP_11_TARGET_COLUMN']
@@ -81,8 +88,16 @@ def run_step_11():
         df[time_col] = pd.to_datetime(df[time_col].str.replace(',', '.'))
         time_gap_minutes = PIPELINE_CONFIG.get('STEP_11_TIME_GAP_THRESHOLD_MINUTES', 15)
         hook_height_col = PIPELINE_CONFIG.get('STEP_9_HOOK_HEIGHT_COLUMN')
-        min_travel = PIPELINE_CONFIG.get('STEP_11_MIN_CONTINUOUS_TRAVEL_EACH_DIRECTION', 10.0)
+        min_travel = PIPELINE_CONFIG.get('STEP_11_MIN_CONTINUOUS_TRAVEL', 3.0)
         training_flag_col = PIPELINE_CONFIG.get('STEP_11_TRAINING_FLAG_COLUMN', 'Модель_обучалась_флаг')
+
+        # --- ИЗМЕНЕНИЕ: Загрузка параметра для управления обучением на аномалиях ---
+        exclude_anomalies_from_training = PIPELINE_CONFIG.get('STEP_11_EXCLUDE_ANOMALIES_FROM_TRAINING', True)
+        if exclude_anomalies_from_training:
+            logger.info("Режим обучения: ранее найденные аномалии будут ИСКЛЮЧАТЬСЯ из обучающей выборки.")
+        else:
+            logger.info("Режим обучения: модель будет обучаться на ВСЕХ точках, включая ранее найденные аномалии.")
+        # -------------------------------------------------------------------------
 
         # --- ПАРАМЕТРЫ ДЛЯ ПРОВЕРКИ ГЛУБИНЫ И ВЕСА ---
         bit_depth_col = PIPELINE_CONFIG.get('STEP_11_BIT_DEPTH_COLUMN')
@@ -99,6 +114,18 @@ def run_step_11():
         # --- НОВЫЕ ПАРАМЕТРЫ ДЛЯ СБРОСА УСТАРЕВШЕЙ МОДЕЛИ ---
         enable_stale_check = PIPELINE_CONFIG.get('STEP_11_ENABLE_MODEL_STALE_CHECK', False)
         stale_threshold_minutes = PIPELINE_CONFIG.get('STEP_11_MODEL_STALE_THRESHOLD_MINUTES', 60)
+
+        # --- ПАРАМЕТРЫ БАЛАНСИРОВКИ ДАННЫХ ---
+        enable_balancing = PIPELINE_CONFIG.get('STEP_11_ENABLE_DATA_BALANCING', False)
+        balancing_col = PIPELINE_CONFIG.get('STEP_11_BALANCING_COLUMN')
+        max_stationary_percent = PIPELINE_CONFIG.get('STEP_11_BALANCING_MAX_STATIONARY_PERCENT', 50)
+        if enable_balancing:
+            logger.info(
+                f"Включена балансировка данных по '{balancing_col}'. Макс. % статичных точек: {max_stationary_percent}%.")
+            if balancing_col not in df.columns:
+                logger.error(f"Столбец для балансировки '{balancing_col}' не найден. Балансировка будет отключена.")
+                enable_balancing = False
+        # ---------------------------------------------
 
         if enable_stale_check:
             logger.info(f"Включена проверка на устаревание модели. Порог: {stale_threshold_minutes} минут.")
@@ -138,7 +165,6 @@ def run_step_11():
             break_indices = df_filtered.index[time_diffs > time_gap_minutes].tolist()
             last_index = df_filtered.index[0] if not df_filtered.empty else 0
             for end_index in break_indices:
-                # Находим реальный индекс строки в df_filtered, который соответствует end_index из df
                 loc_end = df_filtered.index.get_loc(end_index)
                 data_blocks.append(df_filtered.loc[last_index:df_filtered.index[loc_end - 1]].copy())
                 last_index = end_index
@@ -151,6 +177,18 @@ def run_step_11():
         df['residual'] = np.nan
         df['is_anomaly'] = 0
         df[training_flag_col] = 0
+
+        # --- ИЗМЕНЕНИЕ: Инициализация столбцов для вклада признаков ---
+        is_linear_model = model_type in ['linear', 'ridge', 'lasso', 'elasticnet']
+        contribution_cols = []
+        if is_linear_model:
+            logger.info("Инициализация столбцов для хранения вклада признаков в предсказание.")
+            contribution_cols = [f'contribution_{f}' for f in feature_cols]
+            intercept_col_name = 'contribution_intercept'
+            for col in contribution_cols:
+                df[col] = np.nan
+            df[intercept_col_name] = np.nan
+        # --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
         # 4. Основной цикл по блокам и внутри блоков
         total_blocks = len(data_blocks)
@@ -180,17 +218,19 @@ def run_step_11():
                     model = LinearRegression()
                     logger.info("Создана стандартная модель LinearRegression.")
                 else:
-                    logger.warning(f"Неизвестный тип модели '{model_type}'. Будет использована LinearRegression по умолчанию.")
+                    logger.warning(
+                        f"Неизвестный тип модели '{model_type}'. Будет использована LinearRegression по умолчанию.")
                     model = LinearRegression()
             except Exception as e:
-                logger.error(f"Ошибка при создании модели типа '{model_type}': {e}. Будет использована LinearRegression по умолчанию.")
+                logger.error(
+                    f"Ошибка при создании модели типа '{model_type}': {e}. Будет использована LinearRegression по умолчанию.")
                 model = LinearRegression()
             # --- Конец фабрики моделей ---
 
             is_model_fitted = False
-            last_training_time = None  # Для отслеживания времени последнего обучения
+            scaler = None
+            last_training_time = None
 
-            # *** ОПТИМИЗАЦИЯ: Инициализируем столбцы в локальном блоке для ускорения расчетов ***
             block_df.loc[:, 'predicted_weight'] = np.nan
             block_df.loc[:, 'residual'] = np.nan
             block_df.loc[:, 'is_anomaly'] = 0
@@ -198,7 +238,7 @@ def run_step_11():
             for i in tqdm(range(min_window_size, len(block_df), window_step),
                           desc=f"Анализ блока {block_num}/{total_blocks}"):
 
-                # --- НОВАЯ ЛОГИКА: ПРОВЕРКА УСТАРЕВАНИЯ МОДЕЛИ ---
+                # --- ПРОВЕРКА УСТАРЕВАНИЯ МОДЕЛИ ---
                 if is_model_fitted and enable_stale_check and last_training_time:
                     current_time = block_df[time_col].iloc[i]
                     time_diff_minutes = (current_time - last_training_time).total_seconds() / 60
@@ -208,49 +248,73 @@ def run_step_11():
                             f"порога {stale_threshold_minutes} мин). Сброс модели."
                         )
                         is_model_fitted = False
+                        scaler = None
                         last_training_time = None
-                # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
 
                 start_index = max(0, i - max_window_size)
                 train_window_full = block_df.iloc[start_index:i]
 
-                clean_train_window = train_window_full[train_window_full['is_anomaly'] == 0]
+                if exclude_anomalies_from_training:
+                    clean_train_window = train_window_full[train_window_full['is_anomaly'] == 0]
+                else:
+                    clean_train_window = train_window_full
 
-                # --- Фильтрация обучающего окна по давлению ---
                 if enable_pressure_filter:
                     clean_train_window = clean_train_window[clean_train_window[pressure_col] <= pressure_threshold]
-                # --- КОНЕЦ ---
 
-                # Проверка условий для переобучения
                 should_retrain = False
                 if len(clean_train_window) >= min_window_size:
                     travel_diffs = clean_train_window[hook_height_col].diff()
                     max_upward, max_downward = find_max_continuous_travel(travel_diffs)
-
-                    if max_upward >= min_travel and max_downward >= min_travel:
+                    if max_upward >= min_travel or max_downward >= min_travel:
                         should_retrain = True
 
                 if should_retrain:
-                    model.fit(clean_train_window[feature_cols], clean_train_window[target_col])
+                    training_data = clean_train_window
+                    if enable_balancing:
+                        moving_data = training_data[training_data[balancing_col] != 0]
+                        stationary_data = training_data[training_data[balancing_col] == 0]
+                        n_moving = len(moving_data)
+                        n_stationary = len(stationary_data)
+                        n_total = n_moving + n_stationary
+                        if n_total > 0 and n_moving > 0:
+                            current_stationary_percent = (n_stationary / n_total) * 100
+                            if current_stationary_percent > max_stationary_percent:
+                                if (100 - max_stationary_percent) > 0:
+                                    target_n_stationary = int(
+                                        (max_stationary_percent * n_moving) / (100 - max_stationary_percent))
+                                    target_n_stationary = min(target_n_stationary, n_stationary)
+                                    stationary_data_sampled = stationary_data.sample(n=target_n_stationary,
+                                                                                     random_state=42)
+                                    training_data = pd.concat([moving_data, stationary_data_sampled])
+
+                    X_train = training_data[feature_cols]
+                    y_train = training_data[target_col]
+
+                    if normalization_type == 'min_max':
+                        scaler = MinMaxScaler()
+                        X_train_scaled = scaler.fit_transform(X_train)
+                    elif normalization_type == 'z_score':
+                        scaler = StandardScaler()
+                        X_train_scaled = scaler.fit_transform(X_train)
+                    else:  # 'none'
+                        scaler = None
+                        X_train_scaled = X_train
+
+                    model.fit(X_train_scaled, y_train)
                     is_model_fitted = True
                     df.loc[clean_train_window.index, training_flag_col] = 1
-                    # --- НОВАЯ ЛОГИКА: Запоминаем время последнего обучения ---
                     last_training_time = clean_train_window[time_col].iloc[-1]
-                    # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
 
                 if not is_model_fitted:
                     continue
 
                 predict_block = block_df.iloc[i: i + window_step]
-
-                # --- ОБНОВЛЕННАЯ ЛОГИКА: ФИЛЬТРАЦИЯ БЛОКА ДЛЯ АНАЛИЗА ---
                 analysis_block = predict_block
 
-                # 1. Фильтр по давлению
                 if enable_pressure_filter:
                     analysis_block = analysis_block[analysis_block[pressure_col] <= pressure_threshold]
 
-                # 2. Фильтр по глубине и весу (если блок еще не пуст)
                 if not analysis_block.empty and enable_depth_check:
                     depth_mask = analysis_block[bit_depth_col] >= min_depth_threshold
                     if enable_weight_override:
@@ -262,15 +326,25 @@ def run_step_11():
 
                 if analysis_block.empty:
                     continue
-                # --- КОНЕЦ ОБНОВЛЕННОЙ ЛОГИКИ ---
 
-                predictions = model.predict(analysis_block[feature_cols])
+                X_predict = analysis_block[feature_cols]
+                if scaler:
+                    X_predict_scaled = scaler.transform(X_predict)
+                else:
+                    X_predict_scaled = X_predict
 
-                # Применение обрезки, если опция включена
+                predictions = model.predict(X_predict_scaled)
+
                 if use_clip:
                     predictions = np.clip(predictions, min_clip, max_clip)
 
-                # *** ОПТИМИЗАЦИЯ: Обновляем данные в обоих DataFrame ***
+                # --- ИЗМЕНЕНИЕ: Расчет и сохранение вклада каждого признака ---
+                if is_linear_model:
+                    feature_contributions = X_predict_scaled * model.coef_
+                    df.loc[analysis_block.index, contribution_cols] = feature_contributions
+                    df.loc[analysis_block.index, intercept_col_name] = model.intercept_
+                # --- КОНЕЦ ИЗМЕНЕНИЯ ---
+
                 residuals = analysis_block[target_col] - predictions
                 df.loc[analysis_block.index, 'predicted_weight'] = predictions
                 df.loc[analysis_block.index, 'residual'] = residuals
@@ -278,30 +352,14 @@ def run_step_11():
                 block_df.loc[analysis_block.index, 'residual'] = residuals
 
                 potential_anomalies_mask = abs(residuals) > anomaly_threshold
-
                 if potential_anomalies_mask.any():
-                    # *** ОПТИМИЗАЦИЯ: Вся логика поиска последовательностей теперь работает
-                    # с `block_df`, который имеет фиксированный и относительно небольшой размер.
-                    # Это предотвращает замедление по мере обработки всего файла. ***
-
-                    # 1. Создаем маску потенциальных аномалий для всего блока
                     potential_mask_in_block = abs(block_df['residual']) > anomaly_threshold
-
-                    # 2. Создаем группы из смежных одинаковых значений в этой маске
                     grouper = potential_mask_in_block.diff().ne(0).cumsum()
-
-                    # 3. Получаем ID групп, которые содержат аномалии
                     anomaly_group_ids = grouper[potential_mask_in_block]
-
                     if not anomaly_group_ids.empty:
-                        # 4. Рассчитываем размеры только для этих аномальных групп
                         block_sizes = anomaly_group_ids.groupby(anomaly_group_ids).transform('size')
-
-                        # 5. Находим индексы, где размер группы соответствует минимальному порогу
                         actual_anomaly_indices = block_sizes[block_sizes >= min_consecutive].index
-
                         if not actual_anomaly_indices.empty:
-                            # 6. Обновляем флаги в обоих DataFrame
                             df.loc[actual_anomaly_indices, 'is_anomaly'] = 1
                             block_df.loc[actual_anomaly_indices, 'is_anomaly'] = 1
 
@@ -318,3 +376,4 @@ def run_step_11():
     except Exception as e:
         logger.error(f"Ошибка на Шаге 11: {e}", exc_info=True)
         return False
+
