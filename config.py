@@ -19,10 +19,10 @@ PIPELINE_CONFIG = {
     # Общие
     "OUTPUT_DIR": "output",
     "MODEL_PATH": r"D:\models\checkpoints_k\best_model_kl.pt",
-    "START_PIPELINE_FROM_STEP": 12,  # С какого шага начинать пайплайн (1-12)
+    "START_PIPELINE_FROM_STEP": 11,  # С какого шага начинать пайплайн (1-12)
 
     # Шаг 1: Выгрузка
-    "USE_EXISTING_STEP_1_OUTPUT": False,
+    "USE_EXISTING_STEP_1_OUTPUT": True,
     "TOP_N": 500000,
     "SORT_COLUMN": "Время_204",
     "ALL_COLUMNS": [
@@ -100,14 +100,17 @@ PIPELINE_CONFIG = {
     "STEP_10_OUTPUT_FILE": "step_10_final_dataset.csv",
 
     # Шаг 11: Поиск аномалий веса
-    # --- НОВЫЙ ПАРАМЕТР НОРМАЛИЗАЦИИ ---
+    # --- НОВЫЙ ПАРАМЕТР ДЛЯ УПРАВЛЕНИЯ INTERCEPT ---
+    # True = модель сама подбирает свободный член (стандартное поведение).
+    # False = модель работает без свободного члена, проходя через начало координат.
+    "STEP_11_MODEL_FIT_INTERCEPT": False,
+    # ------------------------------------------------
     "STEP_11_NORMALIZATION_TYPE": "z_score",  # Варианты: "none", "min_max", "z_score"
-    # ------------------------------------
-    "STEP_11_MODEL_TYPE": "elasticnet",  # Варианты: "linear", "ridge", "lasso", "elasticnet"
+    "STEP_11_MODEL_TYPE": "lasso",  # Варианты: "linear", "ridge", "lasso", "elasticnet"
     "STEP_11_MODEL_PARAMS": {
         "ridge": {"alpha": 2.0},      # Параметр регуляризации для Ridge (L2)
         "lasso": {"alpha": 0.1},      # Параметр регуляризации для Lasso (L1)
-        "elasticnet": {"alpha": 1.0, "l1_ratio": 0.5} # Параметры для ElasticNet (L1+L2)
+        "elasticnet": {"alpha": 2.0, "l1_ratio": 0.5} # Параметры для ElasticNet (L1+L2)
     },
     "STEP_11_TARGET_COLUMN": "Вес_на_крюке_28",
     "STEP_11_FEATURE_COLUMNS": [
@@ -123,27 +126,23 @@ PIPELINE_CONFIG = {
     "STEP_11_BIT_DEPTH_COLUMN": "Глубина_долота_35",  # Имя столбца для проверки глубины
     "STEP_11_ENABLE_MIN_DEPTH_CHECK": True,  # Включить/выключить проверку
     "STEP_11_MIN_DEPTH_THRESHOLD": 80.0,  # Порог глубины в метрах для начала анализа
-    "STEP_11_MIN_WINDOW_SIZE": 600,  # Мин. кол-во точек для обучения
+    "STEP_11_MIN_WINDOW_SIZE": 1200,  # Мин. кол-во точек для обучения
     "STEP_11_MAX_WINDOW_SIZE": 3000,  # Макс. размер окна, которое смотрит назад
     "STEP_11_WINDOW_STEP": 10,
     "STEP_11_ANOMALY_THRESHOLD": 5.0,
     "STEP_11_CONSECUTIVE_ANOMALIES_MIN": 1,
-    # --- ИЗМЕНЕНИЕ: Новый параметр для управления обучением на аномалиях ---
-    # True = исключать аномалии из обучения (старое поведение)
-    # False = включать аномалии в обучение (новое поведение по вашему запросу)
     "STEP_11_EXCLUDE_ANOMALIES_FROM_TRAINING": False,
-    # -----------------------------------------------------------------
     "STEP_11_USE_PREDICTION_CLIP": True,
     "STEP_11_PREDICTION_MIN_CLIP": 0,
     "STEP_11_PREDICTION_MAX_CLIP": 150,
     "STEP_11_TIME_GAP_THRESHOLD_MINUTES": 10,
-    "STEP_11_MIN_CONTINUOUS_TRAVEL": 15.0,  # Мин. суммарный ход крюка вверх Или вниз для переобучения
+    "STEP_11_MIN_CONTINUOUS_TRAVEL": 7.0,  # Мин. суммарный ход крюка вверх Или вниз для переобучения
     "STEP_11_ENABLE_WEIGHT_OVERRIDE": True,
     "STEP_11_MIN_WEIGHT_OVERRIDE": 35.0,
 
     # --- СБРОС УСТАРЕВШЕЙ МОДЕЛИ ---
-    "STEP_11_ENABLE_MODEL_STALE_CHECK": False,       # Включить/выключить проверку
-    "STEP_11_MODEL_STALE_THRESHOLD_MINUTES": 240,    # Порог "устаревания" в минутах
+    "STEP_11_ENABLE_MODEL_STALE_CHECK": False,        # Включить/выключить проверку
+    "STEP_11_MODEL_STALE_THRESHOLD_MINUTES": 240,     # Порог "устаревания" в минутах
     # ---------------------------------------------------
 
     # --- ПАРАМЕТРЫ ДЛЯ ФИЛЬТРАЦИИ ПО ДАВЛЕНИЮ ---
@@ -165,9 +164,7 @@ PIPELINE_CONFIG = {
     "STEP_12_INPUT_FILE": "step_11_anomaly_detection.csv",
     "STEP_12_PLOT_FILE_PREFIX": "step_12_anomaly_plot",
     "STEP_12_CHUNK_MINUTES": 60,
-    # --- ИЗМЕНЕНИЕ: Новый параметр для включения графика с вкладом признаков ---
     "STEP_12_SHOW_CONTRIBUTION_PLOT": True,
-    # -------------------------------------------------------------------------
     "STEP_12_SKIPPED_CHUNKS_REPORT_FILE": "step_12_skipped_chunks_report.csv",
     "STEP_12_PLOT_SETTINGS": {
         "bit_depth_col": "Глубина_долота_35",

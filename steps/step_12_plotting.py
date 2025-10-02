@@ -136,42 +136,43 @@ def _generate_plot_for_chunk(args):
         # --- Панель 5: Вклад признаков в предсказание ---
         if show_contrib_plot:
             ax5.set_xlabel('Вклад в расчетный вес, т', fontsize=12)
-
             if feature_cols:
                 contribution_cols = [f'contribution_{f}' for f in feature_cols]
                 intercept_col = 'contribution_intercept'
-                all_contrib_cols = [intercept_col] + contribution_cols
 
-                # Список всех столбцов, необходимых для этого графика
-                cols_for_plot5 = all_contrib_cols + [predicted_hookload_col]
+                # Список столбцов, которые будут отрисованы в цикле (без intercept)
+                plot_loop_cols = contribution_cols
 
-                if all(col in df_chunk.columns for col in all_contrib_cols):
+                # Список ВСЕХ столбцов, необходимых для графика
+                all_needed_cols = [intercept_col] + contribution_cols + [predicted_hookload_col]
 
-                    # ИСПРАВЛЕНИЕ: Создаем один DataFrame для графика и удаляем пропуски из всех
-                    # нужных столбцов ОДНОВРЕМЕННО. Это гарантирует совпадение размерностей.
-                    plot_data = df_chunk[cols_for_plot5].dropna()
+                # Проверяем, что все нужные столбцы существуют
+                if all(col in df_chunk.columns for col in all_needed_cols):
+                    plot_data = df_chunk[all_needed_cols].dropna()
 
                     if not plot_data.empty:
                         y = plot_data.index
-                        left_boundary = np.zeros(len(plot_data))
+                        # НАЧАЛЬНАЯ ТОЧКА - это значение intercept. График будет строиться "поверх" него.
+                        left_boundary = plot_data[intercept_col].values
 
-                        plot_colors = cm.get_cmap('viridis', len(all_contrib_cols))
+                        plot_colors = cm.get_cmap('viridis', len(plot_loop_cols))
 
-                        # Используем 'plot_idx', чтобы не конфликтовать с внешней переменной 'i'
-                        for plot_idx, col in enumerate(all_contrib_cols):
+                        # Цикл теперь только по вкладам от признаков
+                        for plot_idx, col in enumerate(plot_loop_cols):
                             right_boundary = left_boundary + plot_data[col].values
                             label_name = col.replace('contribution_', '').replace('_', ' ')
                             ax5.fill_betweenx(y, left_boundary, right_boundary,
                                               label=label_name, color=plot_colors(plot_idx), alpha=0.8)
                             left_boundary = right_boundary
 
-                        # Строим итоговую линию по отфильтрованным данным
+                        # Строим итоговую линию для сверки
                         ax5.plot(plot_data[predicted_hookload_col], y, color='red',
                                  linestyle='--', linewidth=1.5, label='Итог (Predicted)')
 
                         ax5.legend(loc='upper left', fontsize='small')
                         ax5.grid(True, which='both', linestyle='--', linewidth=0.5)
                 else:
+                    # Этот блок остается на случай, если столбцы вклада вообще не были созданы
                     logger.warning(
                         f"График вклада не будет построен для чанка {i + 1}: отсутствуют необходимые столбцы.")
                     ax5.text(0.5, 0.5, 'Нет данных для\nрасчета вклада',
@@ -282,4 +283,3 @@ def run_step_12():
     except Exception as e:
         logger.error(f"Критическая ошибка на Шаге 12: {e}", exc_info=True)
         return False
-
