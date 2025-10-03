@@ -9,7 +9,7 @@ DB_CONFIG = {
     "DRIVER": os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server"),
     "SERVER": os.getenv("DB_SERVER"),
     "DATABASE": os.getenv("DB_DATABASE"),
-    "VIEW_NAME": "[dbo].[v_kharyaginskoe_kha_e1_17_1]",
+    "VIEW_NAME": "[dbo].[v_kharyaginskoe_kha_e1_16_1]",
     "USERNAME": os.getenv("DB_USERNAME"),
     "PASSWORD": os.getenv("DB_PASSWORD")
 }
@@ -22,8 +22,8 @@ PIPELINE_CONFIG = {
     "START_PIPELINE_FROM_STEP": 11,  # С какого шага начинать пайплайн (1-12)
 
     # Шаг 1: Выгрузка
-    "USE_EXISTING_STEP_1_OUTPUT": True,
-    "TOP_N": 500000,
+    "USE_EXISTING_STEP_1_OUTPUT": False,
+    "TOP_N": 1700000,
     "SORT_COLUMN": "Время_204",
     "ALL_COLUMNS": [
         "Время_204", "Вес_на_крюке_28", "Высота_крюка_103",
@@ -127,7 +127,7 @@ PIPELINE_CONFIG = {
     "STEP_11_ENABLE_MIN_DEPTH_CHECK": True,  # Включить/выключить проверку
     "STEP_11_MIN_DEPTH_THRESHOLD": 80.0,  # Порог глубины в метрах для начала анализа
     "STEP_11_MIN_WINDOW_SIZE": 1200,  # Мин. кол-во точек для обучения
-    "STEP_11_MAX_WINDOW_SIZE": 3000,  # Макс. размер окна, которое смотрит назад
+    "STEP_11_MAX_WINDOW_SIZE": 30000,  # Макс. размер окна, которое смотрит назад
     "STEP_11_WINDOW_STEP": 10,
     "STEP_11_ANOMALY_THRESHOLD": 5.0,
     "STEP_11_CONSECUTIVE_ANOMALIES_MIN": 1,
@@ -136,13 +136,13 @@ PIPELINE_CONFIG = {
     "STEP_11_PREDICTION_MIN_CLIP": 0,
     "STEP_11_PREDICTION_MAX_CLIP": 150,
     "STEP_11_TIME_GAP_THRESHOLD_MINUTES": 10,
-    "STEP_11_MIN_CONTINUOUS_TRAVEL": 7.0,  # Мин. суммарный ход крюка вверх Или вниз для переобучения
+    "STEP_11_MIN_CONTINUOUS_TRAVEL": 15.0,  # Мин. суммарный ход крюка вверх Или вниз для переобучения
     "STEP_11_ENABLE_WEIGHT_OVERRIDE": True,
     "STEP_11_MIN_WEIGHT_OVERRIDE": 35.0,
 
     # --- СБРОС УСТАРЕВШЕЙ МОДЕЛИ ---
     "STEP_11_ENABLE_MODEL_STALE_CHECK": False,        # Включить/выключить проверку
-    "STEP_11_MODEL_STALE_THRESHOLD_MINUTES": 240,     # Порог "устаревания" в минутах
+    "STEP_11_MODEL_STALE_THRESHOLD_MINUTES": 24000,     # Порог "устаревания" в минутах
     # ---------------------------------------------------
 
     # --- ПАРАМЕТРЫ ДЛЯ ФИЛЬТРАЦИИ ПО ДАВЛЕНИЮ ---
