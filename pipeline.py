@@ -13,7 +13,7 @@ from steps.step_7_advanced_reset import run_step_7
 from steps.step_8_bottom_hole_depth import run_step_8
 from steps.step_9_derivatives import run_step_9
 from steps.step_10_above_bottom_hole import run_step_10
-from steps.step_11_anomaly_detection import run_step_11
+from steps.step_11.main import run_step_11
 from steps.step_12_plotting import run_step_12
 
 # Настройка логирования для отслеживания всего процесса
