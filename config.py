@@ -9,7 +9,7 @@ DB_CONFIG = {
     "DRIVER": os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server"),
     "SERVER": os.getenv("DB_SERVER"),
     "DATABASE": os.getenv("DB_DATABASE"),
-    "VIEW_NAME": "[dbo].[v_kharyaginskoe_kha_e1_16_1]",
+    "VIEW_NAME": "[dbo].[v_kharyaginskoe_kha_e1_17_1]",
     "USERNAME": os.getenv("DB_USERNAME"),
     "PASSWORD": os.getenv("DB_PASSWORD")
 }
@@ -23,7 +23,7 @@ PIPELINE_CONFIG = {
 
     # Шаг 1: Выгрузка
     "USE_EXISTING_STEP_1_OUTPUT": False,
-    "TOP_N": 1700000,
+    "TOP_N": 350000,
     "SORT_COLUMN": "Время_204",
     "ALL_COLUMNS": [
         "Время_204", "Вес_на_крюке_28", "Высота_крюка_103",
@@ -135,7 +135,7 @@ PIPELINE_CONFIG = {
     "STEP_11_USE_PREDICTION_CLIP": True,
     "STEP_11_PREDICTION_MIN_CLIP": 0,
     "STEP_11_PREDICTION_MAX_CLIP": 150,
-    "STEP_11_TIME_GAP_THRESHOLD_MINUTES": 10,
+    "STEP_11_TIME_GAP_THRESHOLD_MINUTES": 6000,
     "STEP_11_MIN_CONTINUOUS_TRAVEL": 15.0,  # Мин. суммарный ход крюка вверх Или вниз для переобучения
     "STEP_11_ENABLE_WEIGHT_OVERRIDE": True,
     "STEP_11_MIN_WEIGHT_OVERRIDE": 35.0,
