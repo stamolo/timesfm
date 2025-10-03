@@ -8,6 +8,7 @@ from torch.amp import GradScaler
 import numpy as np
 import os
 import multiprocessing
+import copy
 
 logger = logging.getLogger(__name__)
 
@@ -133,8 +134,9 @@ class NeuralNetworkModel(ModelWrapper):
         else:  # adam по умолчанию
             self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
 
-        # Функция потерь
+        # Функции потерь: MSE для обучения, MAE для логирования
         self.criterion = nn.MSELoss()
+        self.mae_criterion = nn.L1Loss()  # ИЗМЕНЕНИЕ: Добавили MAE
 
         # ОПТИМИЗАЦИЯ: Инициализируем GradScaler для AMP.
         # Он будет активен только если используется CUDA, в противном случае это "пустышка".
@@ -151,32 +153,30 @@ class NeuralNetworkModel(ModelWrapper):
         """Обучение модели."""
         self.model.train()  # Переводим модель в режим обучения
 
-        # ИСПРАВЛЕНИЕ: Конвертируем данные в тензоры, но ОСТАВЛЯЕМ ИХ НА CPU.
-        # DataLoader сам позаботится о быстрой передаче на GPU благодаря pin_memory=True.
         X_tensor = torch.FloatTensor(X)
         y_tensor = torch.FloatTensor(y).view(-1, 1)
 
+        # --- Параметры обучения и ранней остановки ---
         epochs = self.params.get('epochs', 50)
         batch_size = self.params.get('batch_size', 32)
+        early_stopping_enabled = self.params.get('early_stopping_enabled', False)
+        patience = self.params.get('early_stopping_patience', 3)
+        min_delta = self.params.get('early_stopping_min_delta', 0.0001)
 
-        # ОПТИМИЗАЦИЯ: Добавляем pin_memory=True для ускорения передачи данных на GPU
+        best_loss = np.inf
+        best_mae_at_best_mse = np.inf  # ИЗМЕНЕНИЕ: Храним MAE для лучшей эпохи
+        epochs_no_improve = 0
+        best_model_wts = copy.deepcopy(self.model.state_dict())
+        # -------------------------------------------
+
         use_pin_memory = self.device.type == 'cuda'
-
-        # ОПТИМИЗАЦИЯ: Используем параллельные воркеры для загрузки данных,
-        # чтобы CPU мог готовить следующий батч, пока GPU работает над текущим.
-        # Это ключевое изменение для снижения нагрузки на CPU и ускорения обучения.
         num_workers = 0
-        # Проверяем, что мы не на Windows, где multiprocessing может создавать доп. накладные расходы
         if os.name != 'nt':
             try:
-                # Пытаемся получить количество доступных ядер CPU
                 cpu_count = len(os.sched_getaffinity(0))
             except AttributeError:
-                # Фоллбэк для систем, где нет sched_getaffinity (например, macOS)
                 cpu_count = multiprocessing.cpu_count()
-            # Используем безопасное количество воркеров, чтобы не перегрузить систему
             num_workers = min(cpu_count, 8) if cpu_count else 0
-
 
         dataset = torch.utils.data.TensorDataset(X_tensor, y_tensor)
         train_loader = torch.utils.data.DataLoader(
@@ -184,53 +184,77 @@ class NeuralNetworkModel(ModelWrapper):
             batch_size=batch_size,
             shuffle=True,
             pin_memory=use_pin_memory,
-            num_workers=num_workers, # <-- ГЛАВНОЕ ИЗМЕНЕНИЕ
-            persistent_workers=True if num_workers > 0 else False, # <-- Ускоряет запуск, не пересоздавая процессы
-            drop_last=True # Отбрасываем последний неполный батч, что может улучшить производительность
+            num_workers=num_workers,
+            persistent_workers=True if num_workers > 0 else False,
+            drop_last=True
         )
-
 
         if not self.has_logged_training_start:
             logger.info(
                 f"Первый запуск обучения нейросети на устройстве: {self.device.type.upper()}. "
                 f"AMP включен: {self.scaler.is_enabled()}. "
-                f"Воркеров DataLoader: {num_workers}." # <-- Добавили информацию в лог
+                f"Ранняя остановка: {'Вкл' if early_stopping_enabled else 'Выкл'}. "
+                f"Воркеров DataLoader: {num_workers}."
             )
             self.has_logged_training_start = True
 
-        logger.debug(f"Дообучение на {len(X_tensor)} точках ({epochs} эпох)...")
+        logger.debug(f"Дообучение на {len(X_tensor)} точках (до {epochs} эпох)...")
 
         for epoch in range(epochs):
+            total_epoch_loss = 0.0
+            total_epoch_mae = 0.0  # ИЗМЕНЕНИЕ: Считаем MAE
+            batch_count = 0
             for batch_X, batch_y in train_loader:
-                # ИСПРАВЛЕНИЕ: Перемещаем батчи на нужное устройство ВНУТРИ цикла
                 batch_X, batch_y = batch_X.to(self.device), batch_y.to(self.device)
-
                 self.optimizer.zero_grad()
 
-                # ИСПРАВЛЕНИЕ: Используем новый синтаксис torch.amp.autocast
-                # На CPU этот контекст не будет иметь эффекта.
                 with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
                     outputs = self.model(batch_X)
                     loss = self.criterion(outputs, batch_y)
+                    # ИЗМЕНЕНИЕ: Считаем MAE на батче
+                    mae = self.mae_criterion(outputs, batch_y)
 
-                # ОПТИМИЗАЦИЯ: Масштабируем потери перед обратным проходом
                 self.scaler.scale(loss).backward()
-                # ОПТИМИЗАЦИЯ: Делаем шаг оптимизатора
                 self.scaler.step(self.optimizer)
-                # ОПТИМИЗАЦИЯ: Обновляем масштаб для следующей итерации
                 self.scaler.update()
 
+                total_epoch_loss += loss.item()
+                total_epoch_mae += mae.item()  # ИЗМЕНЕНИЕ
+                batch_count += 1
+
+            avg_epoch_loss = total_epoch_loss / batch_count if batch_count > 0 else 0
+            avg_epoch_mae = total_epoch_mae / batch_count if batch_count > 0 else 0  # ИЗМЕНЕНИЕ
+
+            logger.debug(f"Эпоха {epoch + 1}/{epochs}, MSE: {avg_epoch_loss:.6f}, MAE: {avg_epoch_mae:.6f}")
+
+            # --- Логика ранней остановки (основана на MSE) ---
+            if early_stopping_enabled:
+                if avg_epoch_loss < best_loss - min_delta:
+                    best_loss = avg_epoch_loss
+                    best_mae_at_best_mse = avg_epoch_mae  # ИЗМЕНЕНИЕ: Сохраняем MAE лучшей эпохи
+                    best_model_wts = copy.deepcopy(self.model.state_dict())
+                    epochs_no_improve = 0
+                else:
+                    epochs_no_improve += 1
+
+                if epochs_no_improve >= patience:
+                    logger.info(f"Ранняя остановка на эпохе {epoch + 1}. Ошибка не улучшалась {patience} эпох.")
+                    break
+
         logger.debug(f"Дообучение завершено.")
+        if early_stopping_enabled:
+            # ИЗМЕНЕНИЕ: Выводим в лог обе метрики
+            logger.info(
+                f"Загрузка весов лучшей модели. Ошибки (scaled): MSE={best_loss:.6f}, MAE={best_mae_at_best_mse:.6f}")
+            self.model.load_state_dict(best_model_wts)
 
     def predict(self, X):
         """Предсказание с помощью модели."""
-        self.model.eval()  # Переводим модель в режим оценки
+        self.model.eval()
         X_tensor = torch.FloatTensor(X).to(self.device)
         with torch.no_grad():
-            # ИСПРАВЛЕНИЕ: Используем новый синтаксис torch.amp.autocast
             with torch.amp.autocast(device_type=self.device.type, enabled=(self.device.type == 'cuda')):
                 predictions = self.model(X_tensor)
-        # Возвращаем результат на CPU для конвертации в numpy
         return predictions.cpu().numpy().flatten()
 
 
@@ -247,3 +271,4 @@ def model_factory(model_type, model_params, fit_intercept, input_dim=None):
     else:
         logger.warning(f"Неизвестный тип модели: {model_type}. Будет использована LinearRegression.")
         return SklearnLinearModel('linear', model_params, fit_intercept)
+

@@ -145,6 +145,11 @@ def run_step_11():
         use_clip = PIPELINE_CONFIG.get('STEP_11_USE_PREDICTION_CLIP', False)
         min_clip = PIPELINE_CONFIG.get('STEP_11_PREDICTION_MIN_CLIP', 0)
         max_clip = PIPELINE_CONFIG.get('STEP_11_PREDICTION_MAX_CLIP', 150)
+        enable_error_based_retraining = PIPELINE_CONFIG.get('STEP_11_ENABLE_ERROR_BASED_RETRAINING', False)
+        retraining_error_threshold = PIPELINE_CONFIG.get('STEP_11_RETRAINING_ERROR_THRESHOLD', 3.0)
+        if enable_error_based_retraining:
+            logger.info(
+                f"Включена оптимизация: модель будет переобучаться только при MAE > {retraining_error_threshold}")
         # --- КОНЕЦ ПАРАМЕТРОВ ---
 
         # 2. Фильтрация и разделение на блоки
@@ -213,11 +218,49 @@ def run_step_11():
                 if enable_pressure_filter:
                     clean_train_window = clean_train_window[clean_train_window[pressure_col] <= pressure_threshold]
 
-                should_retrain = False
+                is_training_data_valid = False
                 if len(clean_train_window) >= min_window_size:
                     travel_diffs = clean_train_window[hook_height_col].diff()
                     max_upward, max_downward = find_max_continuous_travel(travel_diffs)
                     if max_upward >= min_travel or max_downward >= min_travel:
+                        is_training_data_valid = True
+
+                should_retrain = False
+                if is_training_data_valid:
+                    if not is_model_fitted:
+                        should_retrain = True
+                    elif enable_error_based_retraining:
+                        # --- НОВАЯ ЛОГИКА ---
+                        # Определяем окно для проверки - это данные с ПРЕДЫДУЩЕГО шага инференса
+                        start_check_idx = max(0, i - window_step)
+                        recent_check_window = block_df.iloc[start_check_idx:i]
+
+                        # Применяем те же фильтры, что и к обучающим данным
+                        clean_check_window = recent_check_window[
+                            recent_check_window[
+                                'is_anomaly'] == 0] if exclude_anomalies_from_training else recent_check_window
+
+                        if enable_pressure_filter:
+                            clean_check_window = clean_check_window[
+                                clean_check_window[pressure_col] <= pressure_threshold]
+
+                        # Проверяем ошибку только если есть данные для проверки
+                        if not clean_check_window.empty:
+                            X_check = clean_check_window[feature_cols]
+                            y_check = clean_check_window[target_col]
+
+                            X_check_scaled = preprocessor.transform_features(X_check)
+                            predictions_check = model_wrapper.predict(X_check_scaled)
+                            predictions_check_denorm = preprocessor.inverse_transform_target(predictions_check)
+
+                            error = np.mean(np.abs(y_check.values - predictions_check_denorm))
+
+                            if error > retraining_error_threshold:
+                                logger.info(
+                                    f"Ошибка MAE ({error:.2f}) на последнем блоке > порога ({retraining_error_threshold}). Запуск переобучения.")
+                                should_retrain = True
+                        # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
+                    else:
                         should_retrain = True
 
                 if should_retrain:
@@ -279,13 +322,23 @@ def run_step_11():
                 if interpreter:
                     X_predict_scaled_df = pd.DataFrame(X_predict_scaled, index=X_predict.index, columns=feature_cols)
                     contributions_df = interpreter.calculate_contributions(model_wrapper, preprocessor,
-                                                                          X_predict_scaled_df)
+                                                                           X_predict_scaled_df)
                     if contributions_df is not None:
                         df.loc[analysis_block.index, contributions_df.columns] = contributions_df
                 tracker.stop('4. Интерпретация (вклады)')
 
                 tracker.start('5. Пост-обработка и поиск аномалий')
                 residuals = analysis_block[target_col] - predictions
+
+                # --- ИЗМЕНЕНИЕ: Логирование ошибки на шаге инференса ---
+                if not residuals.empty:
+                    inference_mae = np.mean(np.abs(residuals))
+                    # Используем номер шага цикла для более понятного лога
+                    step_num = (i - min_window_size) // window_step + 1
+                    logger.info(
+                        f"Шаг инференса {step_num}: MAE = {inference_mae:.4f} (на {len(analysis_block)} точках)")
+                # --- КОНЕЦ ИЗМЕНЕНИЯ ---
+
                 df.loc[analysis_block.index, 'predicted_weight'] = predictions
                 df.loc[analysis_block.index, 'residual'] = residuals
                 block_df.loc[analysis_block.index, 'predicted_weight'] = predictions
@@ -321,3 +374,4 @@ def run_step_11():
         # Выводим отчет по времени даже в случае ошибки
         tracker.report()
         return False
+
