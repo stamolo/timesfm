@@ -22,7 +22,7 @@ PIPELINE_CONFIG = {
     "START_PIPELINE_FROM_STEP": 11,  # С какого шага начинать пайплайн (1-12)
 
     # Шаг 1: Выгрузка
-    "USE_EXISTING_STEP_1_OUTPUT": False,
+    "USE_EXISTING_STEP_1_OUTPUT": True,
     "TOP_N": 350000,
     "SORT_COLUMN": "Время_204",
     "ALL_COLUMNS": [
@@ -100,63 +100,65 @@ PIPELINE_CONFIG = {
     "STEP_10_OUTPUT_FILE": "step_10_final_dataset.csv",
 
     # Шаг 11: Поиск аномалий веса
-    # --- НОВЫЙ ПАРАМЕТР ДЛЯ УПРАВЛЕНИЯ INTERCEPT ---
-    # True = модель сама подбирает свободный член (стандартное поведение).
-    # False = модель работает без свободного члена, проходя через начало координат.
+    "STEP_11_CONTINUOUS_TRAINING": True,
     "STEP_11_MODEL_FIT_INTERCEPT": False,
-    # ------------------------------------------------
     "STEP_11_NORMALIZATION_TYPE": "z_score",  # Варианты: "none", "min_max", "z_score"
-    "STEP_11_MODEL_TYPE": "lasso",  # Варианты: "linear", "ridge", "lasso", "elasticnet"
+    "STEP_11_MODEL_TYPE": "neural_network",  # Варианты: "linear", "ridge", "lasso", "elasticnet", "neural_network"
+
     "STEP_11_MODEL_PARAMS": {
-        "ridge": {"alpha": 2.0},      # Параметр регуляризации для Ridge (L2)
-        "lasso": {"alpha": 0.1},      # Параметр регуляризации для Lasso (L1)
-        "elasticnet": {"alpha": 2.0, "l1_ratio": 0.5} # Параметры для ElasticNet (L1+L2)
+        "ridge": {"alpha": 2.0},  # Параметр регуляризации для Ridge (L2)
+        "lasso": {"alpha": 0.1},  # Параметр регуляризации для Lasso (L1)
+        "elasticnet": {"alpha": 2.0, "l1_ratio": 0.5}  # Параметры для ElasticNet (L1+L2)
     },
+
+    # --- ПАРАМЕТРЫ ДЛЯ НЕЙРОННОЙ СЕТИ ---
+    "STEP_11_NN_PARAMS": {
+        "hidden_layers": [32, 16],  # Размеры скрытых слоев
+        "activation_fn": "relu",  # Функция активации: "relu", "tanh"
+        "epochs": 10,  # Количество эпох обучения
+        # Размер батча - важный параметр.
+        # Меньший размер потребляет меньше памяти, но обучение может быть менее стабильным.
+        # Больший - наоборот. Можно экспериментировать с этим значением.
+        "batch_size": 3200,
+        "learning_rate": 0.01,  # Скорость обучения
+        "optimizer": "adam"  # Оптимизатор: "adam", "sgd"
+    },
+    # ------------------------------------
+
     "STEP_11_TARGET_COLUMN": "Вес_на_крюке_28",
     "STEP_11_FEATURE_COLUMNS": [
         "Скорость_инструмента",
-        #"Скорость_инструмента_кв_знак",
         "Глубина_долота_35",
         "Давление_на_входе_18",
         "Обороты_ротора_72"
-        #"Глубина_долота_кв"
     ],
+    "STEP_11_HOOK_HEIGHT_COLUMN": "Высота_крюка_103",
     "STEP_11_SLIPS_COLUMN": "клинья_0123",
     "STEP_11_ABOVE_BHD_COLUMN": "Над забоем, м (бинарный)",
-    "STEP_11_BIT_DEPTH_COLUMN": "Глубина_долота_35",  # Имя столбца для проверки глубины
-    "STEP_11_ENABLE_MIN_DEPTH_CHECK": True,  # Включить/выключить проверку
-    "STEP_11_MIN_DEPTH_THRESHOLD": 80.0,  # Порог глубины в метрах для начала анализа
-    "STEP_11_MIN_WINDOW_SIZE": 1200,  # Мин. кол-во точек для обучения
-    "STEP_11_MAX_WINDOW_SIZE": 30000,  # Макс. размер окна, которое смотрит назад
-    "STEP_11_WINDOW_STEP": 10,
+    "STEP_11_BIT_DEPTH_COLUMN": "Глубина_долота_35",
+    "STEP_11_ENABLE_MIN_DEPTH_CHECK": True,
+    "STEP_11_MIN_DEPTH_THRESHOLD": 80.0,
+    "STEP_11_MIN_WINDOW_SIZE": 2200,
+    "STEP_11_MAX_WINDOW_SIZE": 30000,
+    "STEP_11_WINDOW_STEP": 50,
     "STEP_11_ANOMALY_THRESHOLD": 5.0,
     "STEP_11_CONSECUTIVE_ANOMALIES_MIN": 1,
-    "STEP_11_EXCLUDE_ANOMALIES_FROM_TRAINING": False,
+    "STEP_11_EXCLUDE_ANOMALIES_FROM_TRAINING": True,
     "STEP_11_USE_PREDICTION_CLIP": True,
     "STEP_11_PREDICTION_MIN_CLIP": 0,
     "STEP_11_PREDICTION_MAX_CLIP": 150,
     "STEP_11_TIME_GAP_THRESHOLD_MINUTES": 6000,
-    "STEP_11_MIN_CONTINUOUS_TRAVEL": 15.0,  # Мин. суммарный ход крюка вверх Или вниз для переобучения
+    "STEP_11_MIN_CONTINUOUS_TRAVEL": 15.0,
     "STEP_11_ENABLE_WEIGHT_OVERRIDE": True,
     "STEP_11_MIN_WEIGHT_OVERRIDE": 35.0,
-
-    # --- СБРОС УСТАРЕВШЕЙ МОДЕЛИ ---
-    "STEP_11_ENABLE_MODEL_STALE_CHECK": False,        # Включить/выключить проверку
-    "STEP_11_MODEL_STALE_THRESHOLD_MINUTES": 24000,     # Порог "устаревания" в минутах
-    # ---------------------------------------------------
-
-    # --- ПАРАМЕТРЫ ДЛЯ ФИЛЬТРАЦИИ ПО ДАВЛЕНИЮ ---
-    "STEP_11_PRESSURE_COLUMN": "Давление_на_входе_18",  # Имя столбца с давлением
-    "STEP_11_ENABLE_PRESSURE_FILTER": False,  # Включить/выключить фильтр
-    "STEP_11_PRESSURE_THRESHOLD": 20.0,  # Порог давления в атмосферах
-    # ---------------------------------------------------
-
-    # --- НОВЫЕ ПАРАМЕТРЫ ДЛЯ БАЛАНСИРОВКИ ДАННЫХ ---
-    "STEP_11_ENABLE_DATA_BALANCING": True,  # Включить/выключить балансировку
-    "STEP_11_BALANCING_COLUMN": "Скорость_инструмента", # Столбец для проверки баланса
-    "STEP_11_BALANCING_MAX_STATIONARY_PERCENT": 15, # Макс. допустимый % точек без движения в обучающей выборке
-    # ---------------------------------------------------
-
+    "STEP_11_ENABLE_MODEL_STALE_CHECK": False,
+    "STEP_11_MODEL_STALE_THRESHOLD_MINUTES": 24000,
+    "STEP_11_PRESSURE_COLUMN": "Давление_на_входе_18",
+    "STEP_11_ENABLE_PRESSURE_FILTER": False,
+    "STEP_11_PRESSURE_THRESHOLD": 20.0,
+    "STEP_11_ENABLE_DATA_BALANCING": True,
+    "STEP_11_BALANCING_COLUMN": "Скорость_инструмента",
+    "STEP_11_BALANCING_MAX_STATIONARY_PERCENT": 15,
     "STEP_11_TRAINING_FLAG_COLUMN": "Модель_обучалась_флаг",
     "STEP_11_OUTPUT_FILE": "step_11_anomaly_detection.csv",
 
@@ -177,25 +179,16 @@ PIPELINE_CONFIG = {
         "rpm_col": "Обороты_ротора_72",
         "hook_height_col": "Высота_крюка_103",
         "training_flag_col": "Модель_обучалась_флаг",
-        # --- ОБНОВЛЕННЫЕ ПАРАМЕТРЫ ---
-        "fixed_pressure_rpm_scale": True,  # Вкл/выкл фиксированный масштаб для давления/оборотов
-        "scale_percentile": 95.0,  # Уровень перцентиля для расчета верхней границы
-        "fixed_hook_height_scale": True,  # Вкл/выкл фиксированный масштаб для высоты крюка
-        "hook_height_min": 0,  # Нижняя граница для высоты крюка
-        "hook_height_max": 35,  # Верхняя граница для высоты крюка
-        # --------------------------------
+        "fixed_pressure_rpm_scale": True,
+        "scale_percentile": 95.0,
+        "fixed_hook_height_scale": True,
+        "hook_height_min": 0,
+        "hook_height_max": 35,
         "colors": {
-            "bit_depth": "green",
-            "bhd": "black",
-            "hookload": "royalblue",
-            "predicted_hookload": "orange",
-            "avg_hookload": "gold",
-            "anomaly": "red",
-            "slips": "black",
-            "pressure": "maroon",
-            "rpm": "purple",
-            "hook_height_trained": "black",
-            "hook_height_not_trained": "grey"
+            "bit_depth": "green", "bhd": "black", "hookload": "royalblue",
+            "predicted_hookload": "orange", "avg_hookload": "gold", "anomaly": "red",
+            "slips": "black", "pressure": "maroon", "rpm": "purple",
+            "hook_height_trained": "black", "hook_height_not_trained": "grey"
         },
         "anomaly_marker_s": 15,
         "anomaly_marker_alpha": 0.6

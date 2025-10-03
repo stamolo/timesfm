@@ -30,7 +30,7 @@ DEFAULT_BLACKLIST: Set[str] = {
     # 'Dockerfile.prod', 'Dockerfile',
     # 'docker-compose.yml', 'docker-compose.prod.yml',
     'tmp', 'test_sps', 'dataset', 'pipeline.log',
-    'pred256_3.py', 'pred_web.py', 'test.py', 'train_web.py', 'utils', 'main.py',
+    'pred256_3.py', 'pred_web.py', 'test.py', 'train_web.py', 'utils', 'main_1.py',
 
 }
 
