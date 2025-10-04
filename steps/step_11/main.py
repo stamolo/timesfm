@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import logging
 import time
+import json
 from collections import defaultdict
 from tqdm import tqdm
 from config import PIPELINE_CONFIG
@@ -179,19 +180,52 @@ def run_step_11():
             df[col] = np.nan
         tracker.stop('1. Загрузка и фильтрация данных')
 
-        # 4. Основной цикл
+        # 4. --- ИНИЦИАЛИЗАЦИЯ ИЛИ ЗАГРУЗКА МОДЕЛИ (ПЕРЕД ОСНОВНЫМ ЦИКЛОМ) ---
+        model_wrapper = None
+        preprocessor = None
+        interpreter = None
+        is_model_fitted = False
+
+        load_enabled = PIPELINE_CONFIG.get('STEP_11_LOAD_MODEL_ENABLED', False)
+        if load_enabled:
+            logger.info("Попытка загрузить существующую модель...")
+            save_dir = PIPELINE_CONFIG.get('STEP_11_MODEL_SAVE_DIR', 'saved_model')
+            model_filename = PIPELINE_CONFIG.get('STEP_11_MODEL_FILENAME', 'model.dat')
+            preprocessor_filename = PIPELINE_CONFIG.get('STEP_11_PREPROCESSOR_FILENAME', 'preprocessor.dat')
+            model_path = os.path.join(save_dir, model_filename)
+            preprocessor_path = os.path.join(save_dir, preprocessor_filename)
+
+            if os.path.exists(model_path) and os.path.exists(preprocessor_path):
+                model_wrapper = model_factory(model_type, model_params, fit_intercept_option, input_dim=len(feature_cols))
+                model_wrapper.load(model_path)
+                preprocessor = DataPreprocessor.load(preprocessor_path)
+                if preprocessor:
+                    is_model_fitted = True
+                    interpreter = interpreter_factory(model_wrapper)
+                    logger.info("Модель и препроцессор успешно загружены.")
+                else: # Если препроцессор не загрузился
+                    is_model_fitted = False
+                    logger.warning("Не удалось загрузить препроцессор, модель будет обучаться с нуля.")
+            else:
+                logger.warning("Файлы модели и/или препроцессора не найдены. Модель будет обучаться с нуля.")
+
+        # Если модель не была загружена, инициализируем ее
+        if not is_model_fitted:
+            model_wrapper = model_factory(model_type, model_params, fit_intercept_option, input_dim=len(feature_cols))
+            interpreter = interpreter_factory(model_wrapper)
+            preprocessor = DataPreprocessor(normalization_type)
+
+        last_training_time = None
+        # --- КОНЕЦ БЛОКА ИНИЦИАЛИЗАЦИИ/ЗАГРУЗКИ ---
+
+        # 5. Основной цикл
         total_blocks = len(data_blocks)
         for block_num, block_df in enumerate(data_blocks, 1):
             if len(block_df) < min_window_size:
                 continue
             logger.info(f"Обработка блока #{block_num}/{total_blocks}, размер: {len(block_df)} точек.")
 
-            model_wrapper = model_factory(model_type, model_params, fit_intercept_option, input_dim=len(feature_cols))
-            interpreter = interpreter_factory(model_wrapper)
-            preprocessor = DataPreprocessor(normalization_type)
-
-            is_model_fitted = False
-            last_training_time = None
+            # Локальные переменные для блока (состояние аномалий)
             block_df.loc[:, 'predicted_weight'] = np.nan
             block_df.loc[:, 'residual'] = np.nan
             block_df.loc[:, 'is_anomaly'] = 0
@@ -230,37 +264,24 @@ def run_step_11():
                     if not is_model_fitted:
                         should_retrain = True
                     elif enable_error_based_retraining:
-                        # --- НОВАЯ ЛОГИКА ---
-                        # Определяем окно для проверки - это данные с ПРЕДЫДУЩЕГО шага инференса
                         start_check_idx = max(0, i - window_step)
                         recent_check_window = block_df.iloc[start_check_idx:i]
-
-                        # Применяем те же фильтры, что и к обучающим данным
                         clean_check_window = recent_check_window[
-                            recent_check_window[
-                                'is_anomaly'] == 0] if exclude_anomalies_from_training else recent_check_window
-
+                            recent_check_window['is_anomaly'] == 0] if exclude_anomalies_from_training else recent_check_window
                         if enable_pressure_filter:
-                            clean_check_window = clean_check_window[
-                                clean_check_window[pressure_col] <= pressure_threshold]
-
-                        # Проверяем ошибку только если есть данные для проверки
+                            clean_check_window = clean_check_window[clean_check_window[pressure_col] <= pressure_threshold]
                         if not clean_check_window.empty:
                             X_check = clean_check_window[feature_cols]
                             y_check = clean_check_window[target_col]
-
                             X_check_scaled = preprocessor.transform_features(X_check)
                             predictions_check = model_wrapper.predict(X_check_scaled)
                             predictions_check_denorm = preprocessor.inverse_transform_target(predictions_check)
-
                             error = np.mean(np.abs(y_check.values - predictions_check_denorm))
-
                             if error > retraining_error_threshold:
                                 logger.info(
                                     f"Ошибка MAE ({error:.2f}) на последнем блоке > порога ({retraining_error_threshold}). Запуск переобучения.")
                                 should_retrain = True
-                        # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
-                    else:
+                    else: # Если retraining по ошибке выключен, но модель обучена - переобучаем всегда
                         should_retrain = True
 
                 if should_retrain:
@@ -322,22 +343,13 @@ def run_step_11():
                 if interpreter:
                     X_predict_scaled_df = pd.DataFrame(X_predict_scaled, index=X_predict.index, columns=feature_cols)
                     contributions_df = interpreter.calculate_contributions(model_wrapper, preprocessor,
-                                                                           X_predict_scaled_df)
+                                                                            X_predict_scaled_df)
                     if contributions_df is not None:
                         df.loc[analysis_block.index, contributions_df.columns] = contributions_df
                 tracker.stop('4. Интерпретация (вклады)')
 
                 tracker.start('5. Пост-обработка и поиск аномалий')
                 residuals = analysis_block[target_col] - predictions
-
-                # --- ИЗМЕНЕНИЕ: Логирование ошибки на шаге инференса ---
-                if not residuals.empty:
-                    inference_mae = np.mean(np.abs(residuals))
-                    # Используем номер шага цикла для более понятного лога
-                    step_num = (i - min_window_size) // window_step + 1
-                    logger.info(
-                        f"Шаг инференса {step_num}: MAE = {inference_mae:.4f} (на {len(analysis_block)} точках)")
-                # --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
                 df.loc[analysis_block.index, 'predicted_weight'] = predictions
                 df.loc[analysis_block.index, 'residual'] = residuals
@@ -357,21 +369,50 @@ def run_step_11():
                             block_df.loc[actual_anomaly_indices, 'is_anomaly'] = 1
                 tracker.stop('5. Пост-обработка и поиск аномалий')
 
-        logger.info(f"Найдено {df['is_anomaly'].sum()} итоговых аномальных точек.")
+        # --- 6. СОХРАНЕНИЕ МОДЕЛИ И КОНФИГА (ПОСЛЕ ВСЕХ БЛОКОВ) ---
+        save_enabled = PIPELINE_CONFIG.get('STEP_11_SAVE_MODEL_ENABLED', False)
+        if save_enabled and is_model_fitted:
+            logger.info("Сохранение итоговой модели, препроцессора и конфигурации...")
+            save_dir = PIPELINE_CONFIG.get('STEP_11_MODEL_SAVE_DIR', 'saved_model')
+            model_filename = PIPELINE_CONFIG.get('STEP_11_MODEL_FILENAME', 'model.dat')
+            preprocessor_filename = PIPELINE_CONFIG.get('STEP_11_PREPROCESSOR_FILENAME', 'preprocessor.dat')
+            config_filename = PIPELINE_CONFIG.get('STEP_11_CONFIG_FILENAME', 'pipeline_config.json')
 
+            os.makedirs(save_dir, exist_ok=True)
+
+            model_path = os.path.join(save_dir, model_filename)
+            preprocessor_path = os.path.join(save_dir, preprocessor_filename)
+            config_path = os.path.join(save_dir, config_filename)
+
+            # Сохраняем модель и препроцессор
+            model_wrapper.save(model_path)
+            preprocessor.save(preprocessor_path)
+
+            # Сохраняем конфигурацию
+            try:
+                # Создаем копию конфига для сериализации
+                config_to_save = PIPELINE_CONFIG.copy()
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    json.dump(config_to_save, f, ensure_ascii=False, indent=4)
+                logger.info(f"Конфигурация пайплайна сохранена в: {config_path}")
+            except Exception as e:
+                logger.error(f"Ошибка при сохранении файла конфигурации: {e}")
+
+        elif save_enabled and not is_model_fitted:
+            logger.warning("Сохранение модели пропущено, так как модель не была обучена.")
+
+        # --- КОНЕЦ БЛОКА СОХРАНЕНИЯ ---
+
+        logger.info(f"Найдено {df['is_anomaly'].sum()} итоговых аномальных точек.")
         output_filename = PIPELINE_CONFIG['STEP_11_OUTPUT_FILE']
         output_path = os.path.join(PIPELINE_CONFIG['OUTPUT_DIR'], output_filename)
         df.to_csv(output_path, index=False, sep=';', decimal=',', encoding='utf-8-sig')
         logger.info(f"Итоговый датасет сохранен в: {output_path}")
 
-        # Выводим отчет по времени в конце
         tracker.report()
-
         return True
 
     except Exception as e:
         logger.error(f"Ошибка на Шаге 11: {e}", exc_info=True)
-        # Выводим отчет по времени даже в случае ошибки
         tracker.report()
         return False
-

@@ -9,6 +9,7 @@ import numpy as np
 import os
 import multiprocessing
 import copy
+import joblib
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,14 @@ class ModelWrapper:
         raise NotImplementedError
 
     def predict(self, X):
+        raise NotImplementedError
+
+    def save(self, filepath):
+        """Сохраняет обученную модель в файл."""
+        raise NotImplementedError
+
+    def load(self, filepath):
+        """Загружает модель из файла."""
         raise NotImplementedError
 
 
@@ -73,6 +82,22 @@ class SklearnLinearModel(ModelWrapper):
 
     def predict(self, X):
         return self.model.predict(X)
+
+    def save(self, filepath):
+        """Сохраняет модель sklearn с помощью joblib."""
+        try:
+            joblib.dump(self.model, filepath)
+            logger.info(f"Модель Sklearn успешно сохранена в {filepath}")
+        except Exception as e:
+            logger.error(f"Ошибка при сохранении модели Sklearn: {e}", exc_info=True)
+
+    def load(self, filepath):
+        """Загружает модель sklearn с помощью joblib."""
+        try:
+            self.model = joblib.load(filepath)
+            logger.info(f"Модель Sklearn успешно загружена из {filepath}")
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке модели Sklearn: {e}", exc_info=True)
 
 
 class NeuralNetwork(nn.Module):
@@ -257,6 +282,25 @@ class NeuralNetworkModel(ModelWrapper):
                 predictions = self.model(X_tensor)
         return predictions.cpu().numpy().flatten()
 
+    def save(self, filepath):
+        """Сохраняет состояние (веса) модели PyTorch."""
+        try:
+            torch.save(self.model.state_dict(), filepath)
+            logger.info(f"Модель PyTorch успешно сохранена в {filepath}")
+        except Exception as e:
+            logger.error(f"Ошибка при сохранении модели PyTorch: {e}", exc_info=True)
+
+    def load(self, filepath):
+        """Загружает состояние (веса) в модель PyTorch."""
+        try:
+            # map_location=self.device позволяет корректно загружать модель,
+            # обученную на GPU, на машину только с CPU.
+            self.model.load_state_dict(torch.load(filepath, map_location=self.device))
+            self.model.to(self.device)  # Убедимся, что модель на нужном устройстве
+            logger.info(f"Модель PyTorch успешно загружена из {filepath} на устройство {self.device.type.upper()}")
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке модели PyTorch: {e}", exc_info=True)
+
 
 def model_factory(model_type, model_params, fit_intercept, input_dim=None):
     """
@@ -271,4 +315,3 @@ def model_factory(model_type, model_params, fit_intercept, input_dim=None):
     else:
         logger.warning(f"Неизвестный тип модели: {model_type}. Будет использована LinearRegression.")
         return SklearnLinearModel('linear', model_params, fit_intercept)
-

@@ -9,7 +9,7 @@ DB_CONFIG = {
     "DRIVER": os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server"),
     "SERVER": os.getenv("DB_SERVER"),
     "DATABASE": os.getenv("DB_DATABASE"),
-    "VIEW_NAME": "[dbo].[v_kharyaginskoe_kha_e1_17_1]",
+    "VIEW_NAME": "[dbo].[v_kharyaginskoe_kha_e1_16_1]",
     "USERNAME": os.getenv("DB_USERNAME"),
     "PASSWORD": os.getenv("DB_PASSWORD")
 }
@@ -19,11 +19,11 @@ PIPELINE_CONFIG = {
     # Общие
     "OUTPUT_DIR": "output",
     "MODEL_PATH": r"D:\models\checkpoints_k\best_model_kl.pt",
-    "START_PIPELINE_FROM_STEP": 1,  # С какого шага начинать пайплайн (1-12)
+    "START_PIPELINE_FROM_STEP": 11,  # С какого шага начинать пайплайн (1-12)
 
     # Шаг 1: Выгрузка
     "USE_EXISTING_STEP_1_OUTPUT": False,
-    "TOP_N": 3000000,
+    "TOP_N": 350000,
     "SORT_COLUMN": "Время_204",
     "ALL_COLUMNS": [
         "Время_204", "Вес_на_крюке_28", "Высота_крюка_103",
@@ -100,6 +100,14 @@ PIPELINE_CONFIG = {
     "STEP_10_OUTPUT_FILE": "step_10_final_dataset.csv",
 
     # Шаг 11: Поиск аномалий веса
+    # --- НОВЫЕ ПАРАМЕТРЫ ДЛЯ СОХРАНЕНИЯ/ЗАГРУЗКИ МОДЕЛИ ---
+    "STEP_11_SAVE_MODEL_ENABLED": True,      # Сохранять ли модель в конце
+    "STEP_11_LOAD_MODEL_ENABLED": False,     # Загружать ли модель в начале
+    "STEP_11_MODEL_SAVE_DIR": "saved_model", # Директория для сохранения/загрузки
+    "STEP_11_MODEL_FILENAME": "model.dat",   # Имя файла для модели
+    "STEP_11_PREPROCESSOR_FILENAME": "preprocessor.dat", # Имя файла для препроцессора
+    "STEP_11_CONFIG_FILENAME": "pipeline_config.json", # Имя файла для конфига
+    # ---------------------------------------------------
     "STEP_11_CONTINUOUS_TRAINING": True,
     "STEP_11_MODEL_FIT_INTERCEPT": False,
     "STEP_11_NORMALIZATION_TYPE": "z_score",  # Варианты: "none", "min_max", "z_score"
@@ -113,19 +121,16 @@ PIPELINE_CONFIG = {
 
     # --- ПАРАМЕТРЫ ДЛЯ НЕЙРОННОЙ СЕТИ ---
     "STEP_11_NN_PARAMS": {
-        "hidden_layers": [32, 16],  # Размеры скрытых слоев
+        "hidden_layers": [32, 32, 32],  # Размеры скрытых слоев
         "activation_fn": "relu",  # Функция активации: "relu", "tanh"
         "epochs": 30,  # Максимальное количество эпох обучения
-        # Размер батча - важный параметр.
-        # Меньший размер потребляет меньше памяти, но обучение может быть менее стабильным.
-        # Больший - наоборот. Можно экспериментировать с этим значением.
         "batch_size": 128,
         "learning_rate": 0.001,  # Скорость обучения
         "optimizer": "adam",  # Оптимизатор: "adam", "sgd"
         # --- НОВЫЕ ПАРАМЕТРЫ РАННЕЙ ОСТАНОВКИ ---
-        "early_stopping_enabled": True,      # Включить/выключить раннюю остановку
-        "early_stopping_patience": 3,        # Сколько эпох ждать без улучшения
-        "early_stopping_min_delta": 0.0001   # Минимальное изменение, считающееся улучшением
+        "early_stopping_enabled": True,    # Включить/выключить раннюю остановку
+        "early_stopping_patience": 3,      # Сколько эпох ждать без улучшения
+        "early_stopping_min_delta": 0.00001    # Минимальное изменение, считающееся улучшением
     },
     # ------------------------------------
 
@@ -135,12 +140,12 @@ PIPELINE_CONFIG = {
         "Глубина_долота_35",
         #"Глубина_инструмента_финал",
         "Давление_на_входе_18",
-        "Обороты_ротора_72"
+        #"Обороты_ротора_72"
     ],
 
     # --- НОВЫЕ ПАРАМЕТРЫ ДЛЯ ОПТИМИЗАЦИИ ОБУЧЕНИЯ ---
     "STEP_11_ENABLE_ERROR_BASED_RETRAINING": True, # Включить/выключить опцию
-    "STEP_11_RETRAINING_ERROR_THRESHOLD": 3, # Порог MAE для запуска переобучения
+    "STEP_11_RETRAINING_ERROR_THRESHOLD": 1, # Порог MAE для запуска переобучения
 
     "STEP_11_HOOK_HEIGHT_COLUMN": "Высота_крюка_103",
     "STEP_11_SLIPS_COLUMN": "клинья_0123",
@@ -148,21 +153,21 @@ PIPELINE_CONFIG = {
     "STEP_11_BIT_DEPTH_COLUMN": "Глубина_долота_35",
     "STEP_11_ENABLE_MIN_DEPTH_CHECK": True,
     "STEP_11_MIN_DEPTH_THRESHOLD": 80.0,
-    "STEP_11_MIN_WINDOW_SIZE": 600,
-    "STEP_11_MAX_WINDOW_SIZE": 10000,
-    "STEP_11_WINDOW_STEP": 1,
-    "STEP_11_ANOMALY_THRESHOLD": 5.0,
-    "STEP_11_CONSECUTIVE_ANOMALIES_MIN": 1,
-    "STEP_11_EXCLUDE_ANOMALIES_FROM_TRAINING": False,
+    "STEP_11_MIN_WINDOW_SIZE": 2000,
+    "STEP_11_MAX_WINDOW_SIZE": 60000,
+    "STEP_11_WINDOW_STEP": 10,
+    "STEP_11_ANOMALY_THRESHOLD": 6.0,
+    "STEP_11_CONSECUTIVE_ANOMALIES_MIN": 2,
+    "STEP_11_EXCLUDE_ANOMALIES_FROM_TRAINING": True,
     "STEP_11_USE_PREDICTION_CLIP": True,
     "STEP_11_PREDICTION_MIN_CLIP": 0,
     "STEP_11_PREDICTION_MAX_CLIP": 150,
-    "STEP_11_TIME_GAP_THRESHOLD_MINUTES": 60,
+    "STEP_11_TIME_GAP_THRESHOLD_MINUTES": 60000,
     "STEP_11_MIN_CONTINUOUS_TRAVEL": 10.0,
     "STEP_11_ENABLE_WEIGHT_OVERRIDE": True,
     "STEP_11_MIN_WEIGHT_OVERRIDE": 35.0,
     "STEP_11_ENABLE_MODEL_STALE_CHECK": False,
-    "STEP_11_MODEL_STALE_THRESHOLD_MINUTES": 60,
+    "STEP_11_MODEL_STALE_THRESHOLD_MINUTES": 60000,
     "STEP_11_PRESSURE_COLUMN": "Давление_на_входе_18",
     "STEP_11_ENABLE_PRESSURE_FILTER": False,
     "STEP_11_PRESSURE_THRESHOLD": 20.0,

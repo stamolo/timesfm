@@ -1,6 +1,8 @@
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 import logging
+import joblib
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,28 @@ class DataPreprocessor:
         if self.target_scaler:
             return self.target_scaler.inverse_transform(y_scaled.reshape(-1, 1)).ravel()
         return y_scaled
+
+    def save(self, filepath):
+        """Сохраняет объект препроцессора в файл."""
+        try:
+            joblib.dump(self, filepath)
+            logger.info(f"Препроцессор успешно сохранен в {filepath}")
+        except Exception as e:
+            logger.error(f"Ошибка при сохранении препроцессора в {filepath}: {e}")
+
+    @staticmethod
+    def load(filepath):
+        """Загружает объект препроцессора из файла."""
+        if not os.path.exists(filepath):
+            logger.warning(f"Файл препроцессора не найден: {filepath}. Будет создан новый.")
+            return None
+        try:
+            preprocessor = joblib.load(filepath)
+            logger.info(f"Препроцессор успешно загружен из {filepath}")
+            return preprocessor
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке препроцессора из {filepath}: {e}", exc_info=True)
+            return None
 
 
 def balance_training_data(df, balancing_col, max_stationary_percent):
