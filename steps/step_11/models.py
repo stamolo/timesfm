@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 # Проверяем доступность CUDA и выбираем устройство
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
 class ModelWrapper:
     """
     Базовый класс-обертка для любой модели.

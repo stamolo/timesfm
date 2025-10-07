@@ -121,7 +121,9 @@ def run_step_11():
         min_window_size = PIPELINE_CONFIG['STEP_11_MIN_WINDOW_SIZE']
         max_window_size = PIPELINE_CONFIG['STEP_11_MAX_WINDOW_SIZE']
         window_step = PIPELINE_CONFIG.get('STEP_11_WINDOW_STEP', 1)
-        anomaly_threshold = PIPELINE_CONFIG['STEP_11_ANOMALY_THRESHOLD']
+        # ИЗМЕНЕНИЕ: Загружаем словарь порогов вместо одного значения
+        anomaly_thresholds = PIPELINE_CONFIG.get('STEP_11_ANOMALY_THRESHOLDS', {'low': 4.0})
+        logger.info(f"Используются пороги для аномалий: {anomaly_thresholds}")
         min_consecutive = PIPELINE_CONFIG.get('STEP_11_CONSECUTIVE_ANOMALIES_MIN', 1)
         time_col = PIPELINE_CONFIG.get('SORT_COLUMN')
         df[time_col] = pd.to_datetime(df[time_col].str.replace(',', '.'))
@@ -172,6 +174,7 @@ def run_step_11():
         # 3. Инициализация столбцов
         df['predicted_weight'] = np.nan
         df['residual'] = np.nan
+        # is_anomaly будет хранить уровень: 0=нет, 1=низкий, 2=средний, 3=высокий
         df['is_anomaly'] = 0
         df[training_flag_col] = 0
         contribution_cols = [f'contribution_{f}' for f in feature_cols]
@@ -196,14 +199,15 @@ def run_step_11():
             preprocessor_path = os.path.join(save_dir, preprocessor_filename)
 
             if os.path.exists(model_path) and os.path.exists(preprocessor_path):
-                model_wrapper = model_factory(model_type, model_params, fit_intercept_option, input_dim=len(feature_cols))
+                model_wrapper = model_factory(model_type, model_params, fit_intercept_option,
+                                              input_dim=len(feature_cols))
                 model_wrapper.load(model_path)
                 preprocessor = DataPreprocessor.load(preprocessor_path)
                 if preprocessor:
                     is_model_fitted = True
                     interpreter = interpreter_factory(model_wrapper)
                     logger.info("Модель и препроцессор успешно загружены.")
-                else: # Если препроцессор не загрузился
+                else:  # Если препроцессор не загрузился
                     is_model_fitted = False
                     logger.warning("Не удалось загрузить препроцессор, модель будет обучаться с нуля.")
             else:
@@ -267,9 +271,11 @@ def run_step_11():
                         start_check_idx = max(0, i - window_step)
                         recent_check_window = block_df.iloc[start_check_idx:i]
                         clean_check_window = recent_check_window[
-                            recent_check_window['is_anomaly'] == 0] if exclude_anomalies_from_training else recent_check_window
+                            recent_check_window[
+                                'is_anomaly'] == 0] if exclude_anomalies_from_training else recent_check_window
                         if enable_pressure_filter:
-                            clean_check_window = clean_check_window[clean_check_window[pressure_col] <= pressure_threshold]
+                            clean_check_window = clean_check_window[
+                                clean_check_window[pressure_col] <= pressure_threshold]
                         if not clean_check_window.empty:
                             X_check = clean_check_window[feature_cols]
                             y_check = clean_check_window[target_col]
@@ -281,7 +287,7 @@ def run_step_11():
                                 logger.info(
                                     f"Ошибка MAE ({error:.2f}) на последнем блоке > порога ({retraining_error_threshold}). Запуск переобучения.")
                                 should_retrain = True
-                    else: # Если retraining по ошибке выключен, но модель обучена - переобучаем всегда
+                    else:  # Если retraining по ошибке выключен, но модель обучена - переобучаем всегда
                         should_retrain = True
 
                 if should_retrain:
@@ -343,7 +349,7 @@ def run_step_11():
                 if interpreter:
                     X_predict_scaled_df = pd.DataFrame(X_predict_scaled, index=X_predict.index, columns=feature_cols)
                     contributions_df = interpreter.calculate_contributions(model_wrapper, preprocessor,
-                                                                            X_predict_scaled_df)
+                                                                           X_predict_scaled_df)
                     if contributions_df is not None:
                         df.loc[analysis_block.index, contributions_df.columns] = contributions_df
                 tracker.stop('4. Интерпретация (вклады)')
@@ -356,17 +362,42 @@ def run_step_11():
                 block_df.loc[analysis_block.index, 'predicted_weight'] = predictions
                 block_df.loc[analysis_block.index, 'residual'] = residuals
 
-                potential_anomalies_mask = abs(residuals) > anomaly_threshold
+                # ИЗМЕНЕНИЕ: Логика определения уровня аномалий
+                # Сначала определяем последовательности по самому низкому порогу, затем присваиваем уровень.
+                thresh_low = anomaly_thresholds.get('low', 4.0)
+
+                # Проверяем, есть ли хоть одна аномалия (любого уровня) в текущем шаге
+                potential_anomalies_mask = abs(residuals) > thresh_low
+
                 if potential_anomalies_mask.any():
-                    potential_mask_in_block = abs(block_df['residual']) > anomaly_threshold
+                    # Маска для ВСЕГО блока, определяющая, где есть аномалия ЛЮБОГО уровня
+                    potential_mask_in_block = abs(block_df['residual']) > thresh_low
                     grouper = potential_mask_in_block.diff().ne(0).cumsum()
                     anomaly_group_ids = grouper[potential_mask_in_block]
+
                     if not anomaly_group_ids.empty:
                         block_sizes = anomaly_group_ids.groupby(anomaly_group_ids).transform('size')
                         actual_anomaly_indices = block_sizes[block_sizes >= min_consecutive].index
+
                         if not actual_anomaly_indices.empty:
-                            df.loc[actual_anomaly_indices, 'is_anomaly'] = 1
-                            block_df.loc[actual_anomaly_indices, 'is_anomaly'] = 1
+                            # Теперь, когда у нас есть ИНДЕКСЫ подтвержденных аномалий,
+                            # мы определим их УРОВЕНЬ
+                            thresh_med = anomaly_thresholds.get('medium', 8.0)
+                            thresh_high = anomaly_thresholds.get('high', 12.0)
+
+                            # Берем значения отклонений для подтвержденных аномалий
+                            confirmed_residuals = abs(df.loc[actual_anomaly_indices, 'residual'])
+
+                            # Создаем серию для уровней аномалий
+                            anomaly_levels = pd.Series(0, index=actual_anomaly_indices, dtype=int)
+                            anomaly_levels[confirmed_residuals >= thresh_high] = 3
+                            anomaly_levels[
+                                (confirmed_residuals >= thresh_med) & (confirmed_residuals < thresh_high)] = 2
+                            anomaly_levels[(confirmed_residuals >= thresh_low) & (confirmed_residuals < thresh_med)] = 1
+
+                            # Присваиваем уровни в оба датафрейма
+                            df.loc[actual_anomaly_indices, 'is_anomaly'] = anomaly_levels
+                            block_df.loc[actual_anomaly_indices, 'is_anomaly'] = anomaly_levels
                 tracker.stop('5. Пост-обработка и поиск аномалий')
 
         # --- 6. СОХРАНЕНИЕ МОДЕЛИ И КОНФИГА (ПОСЛЕ ВСЕХ БЛОКОВ) ---
@@ -403,7 +434,9 @@ def run_step_11():
 
         # --- КОНЕЦ БЛОКА СОХРАНЕНИЯ ---
 
-        logger.info(f"Найдено {df['is_anomaly'].sum()} итоговых аномальных точек.")
+        # ИЗМЕНЕНИЕ: Считаем все точки, где уровень аномалии > 0
+        total_anomalies = (df['is_anomaly'] > 0).sum()
+        logger.info(f"Найдено {total_anomalies} итоговых аномальных точек.")
         output_filename = PIPELINE_CONFIG['STEP_11_OUTPUT_FILE']
         output_path = os.path.join(PIPELINE_CONFIG['OUTPUT_DIR'], output_filename)
         df.to_csv(output_path, index=False, sep=';', decimal=',', encoding='utf-8-sig')
@@ -416,3 +449,4 @@ def run_step_11():
         logger.error(f"Ошибка на Шаге 11: {e}", exc_info=True)
         tracker.report()
         return False
+

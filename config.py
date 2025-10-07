@@ -111,7 +111,7 @@ PIPELINE_CONFIG = {
     "STEP_11_CONTINUOUS_TRAINING": True,
     "STEP_11_MODEL_FIT_INTERCEPT": False,
     "STEP_11_NORMALIZATION_TYPE": "z_score",  # Варианты: "none", "min_max", "z_score"
-    "STEP_11_MODEL_TYPE": "neural_network",  # Варианты: "linear", "ridge", "lasso", "elasticnet", "neural_network"
+    "STEP_11_MODEL_TYPE": "lasso",  # Варианты: "linear", "ridge", "lasso", "elasticnet", "neural_network"
 
     "STEP_11_MODEL_PARAMS": {
         "ridge": {"alpha": 2.0},  # Параметр регуляризации для Ridge (L2)
@@ -121,7 +121,7 @@ PIPELINE_CONFIG = {
 
     # --- ПАРАМЕТРЫ ДЛЯ НЕЙРОННОЙ СЕТИ ---
     "STEP_11_NN_PARAMS": {
-        "hidden_layers": [32, 32, 32],  # Размеры скрытых слоев
+        "hidden_layers": [32, 16],  # Размеры скрытых слоев
         "activation_fn": "relu",  # Функция активации: "relu", "tanh"
         "epochs": 30,  # Максимальное количество эпох обучения
         "batch_size": 128,
@@ -134,17 +134,19 @@ PIPELINE_CONFIG = {
     },
     # ------------------------------------
 
-    "STEP_11_TARGET_COLUMN": "Вес_на_крюке_28",
+    "STEP_11_TARGET_COLUMN":
+        #"Вес_на_крюке_28",
+        "Изменение_веса_на_крюке",
     "STEP_11_FEATURE_COLUMNS": [
+        "Вес_на_крюке_28",
         "Скорость_инструмента",
         "Глубина_долота_35",
-        #"Глубина_инструмента_финал",
         "Давление_на_входе_18",
-        #"Обороты_ротора_72"
+        "Обороты_ротора_72"
     ],
 
     # --- НОВЫЕ ПАРАМЕТРЫ ДЛЯ ОПТИМИЗАЦИИ ОБУЧЕНИЯ ---
-    "STEP_11_ENABLE_ERROR_BASED_RETRAINING": True, # Включить/выключить опцию
+    "STEP_11_ENABLE_ERROR_BASED_RETRAINING": False, # Включить/выключить опцию
     "STEP_11_RETRAINING_ERROR_THRESHOLD": 1, # Порог MAE для запуска переобучения
 
     "STEP_11_HOOK_HEIGHT_COLUMN": "Высота_крюка_103",
@@ -153,21 +155,26 @@ PIPELINE_CONFIG = {
     "STEP_11_BIT_DEPTH_COLUMN": "Глубина_долота_35",
     "STEP_11_ENABLE_MIN_DEPTH_CHECK": True,
     "STEP_11_MIN_DEPTH_THRESHOLD": 80.0,
-    "STEP_11_MIN_WINDOW_SIZE": 2000,
-    "STEP_11_MAX_WINDOW_SIZE": 60000,
+    "STEP_11_MIN_WINDOW_SIZE": 600,
+    "STEP_11_MAX_WINDOW_SIZE": 7200,
     "STEP_11_WINDOW_STEP": 10,
-    "STEP_11_ANOMALY_THRESHOLD": 6.0,
-    "STEP_11_CONSECUTIVE_ANOMALIES_MIN": 2,
-    "STEP_11_EXCLUDE_ANOMALIES_FROM_TRAINING": True,
+    # ИЗМЕНЕНИЕ: Замена одного порога на словарь с уровнями
+    "STEP_11_ANOMALY_THRESHOLDS": {
+        "low": 4.0,     # Черные точки
+        "medium": 8.0,  # Оранжевые точки
+        "high": 12.0    # Красные точки
+    },
+    "STEP_11_CONSECUTIVE_ANOMALIES_MIN": 1,
+    "STEP_11_EXCLUDE_ANOMALIES_FROM_TRAINING": False,
     "STEP_11_USE_PREDICTION_CLIP": True,
     "STEP_11_PREDICTION_MIN_CLIP": 0,
     "STEP_11_PREDICTION_MAX_CLIP": 150,
-    "STEP_11_TIME_GAP_THRESHOLD_MINUTES": 60000,
+    "STEP_11_TIME_GAP_THRESHOLD_MINUTES": 36000,
     "STEP_11_MIN_CONTINUOUS_TRAVEL": 10.0,
     "STEP_11_ENABLE_WEIGHT_OVERRIDE": True,
     "STEP_11_MIN_WEIGHT_OVERRIDE": 35.0,
     "STEP_11_ENABLE_MODEL_STALE_CHECK": False,
-    "STEP_11_MODEL_STALE_THRESHOLD_MINUTES": 60000,
+    "STEP_11_MODEL_STALE_THRESHOLD_MINUTES": 36000,
     "STEP_11_PRESSURE_COLUMN": "Давление_на_входе_18",
     "STEP_11_ENABLE_PRESSURE_FILTER": False,
     "STEP_11_PRESSURE_THRESHOLD": 20.0,
@@ -195,17 +202,21 @@ PIPELINE_CONFIG = {
         "hook_height_col": "Высота_крюка_103",
         "training_flag_col": "Модель_обучалась_флаг",
         "fixed_pressure_rpm_scale": True,
-        "scale_percentile": 95.0,
+        "scale_percentile": 98.0,
         "fixed_hook_height_scale": True,
         "hook_height_min": 0,
         "hook_height_max": 35,
         "colors": {
             "bit_depth": "green", "bhd": "black", "hookload": "royalblue",
-            "predicted_hookload": "orange", "avg_hookload": "gold", "anomaly": "red",
+            "predicted_hookload": "orange", "avg_hookload": "gold",
+            "anomaly_low": "black",
+            "anomaly_medium": "orange",
+            "anomaly_high": "red",
             "slips": "black", "pressure": "maroon", "rpm": "purple",
             "hook_height_trained": "black", "hook_height_not_trained": "grey"
         },
-        "anomaly_marker_s": 15,
-        "anomaly_marker_alpha": 0.6
+        "anomaly_marker_s": 20,
+        "anomaly_marker_alpha": 0.7
     }
 }
+

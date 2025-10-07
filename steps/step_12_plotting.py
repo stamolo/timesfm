@@ -90,14 +90,33 @@ def _generate_plot_for_chunk(args):
         ax2.set_xlabel('Вес на крюке, т', fontsize=12)
         ax2.plot(df_chunk[hookload_col], df_chunk.index, label='Вес на крюке', color=colors.get('hookload'))
         ax2.plot(df_chunk[predicted_hookload_col], df_chunk.index, label='Predicted вес',
-                 color=colors.get('predicted_hookload'))
+                   color=colors.get('predicted_hookload'))
         ax2.plot(df_chunk[avg_hookload_col], df_chunk.index, label='Средний вес по блоку',
-                 color=colors.get('avg_hookload'))
-        anomalies = df_chunk[df_chunk['is_anomaly'] == 1]
-        if not anomalies.empty:
-            ax2.scatter(anomalies[hookload_col], anomalies.index, label='Аномалии',
-                        color=colors.get('anomaly'), s=plot_settings.get('anomaly_marker_s', 15),
-                        alpha=plot_settings.get('anomaly_marker_alpha', 0.6), zorder=5)
+                   color=colors.get('avg_hookload'))
+
+        # ИЗМЕНЕНИЕ: Отрисовка аномалий с градацией по цвету
+        anomalies_low = df_chunk[df_chunk['is_anomaly'] == 1]
+        anomalies_medium = df_chunk[df_chunk['is_anomaly'] == 2]
+        anomalies_high = df_chunk[df_chunk['is_anomaly'] == 3]
+
+        scatter_params = {
+            's': plot_settings.get('anomaly_marker_s', 20),
+            'alpha': plot_settings.get('anomaly_marker_alpha', 0.7),
+            'zorder': 5
+        }
+
+        if not anomalies_low.empty:
+            ax2.scatter(anomalies_low[hookload_col], anomalies_low.index,
+                        label='Аномалии (низк.)', color=colors.get('anomaly_low', 'black'), **scatter_params)
+
+        if not anomalies_medium.empty:
+            ax2.scatter(anomalies_medium[hookload_col], anomalies_medium.index,
+                        label='Аномалии (сред.)', color=colors.get('anomaly_medium', 'orange'), **scatter_params)
+
+        if not anomalies_high.empty:
+            ax2.scatter(anomalies_high[hookload_col], anomalies_high.index,
+                        label='Аномалии (выс.)', color=colors.get('anomaly_high', 'red'), **scatter_params)
+
         ax2.legend(loc='upper left')
 
         ax2_twin = ax2.twiny()
@@ -283,3 +302,4 @@ def run_step_12():
     except Exception as e:
         logger.error(f"Критическая ошибка на Шаге 12: {e}", exc_info=True)
         return False
+
