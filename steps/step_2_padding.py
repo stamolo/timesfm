@@ -31,8 +31,9 @@ def run_step_2():
 
         df_padded = pd.concat([df_padding, df_step_1, df_padding], ignore_index=True)
 
-        df_padded.fillna(method='ffill', inplace=True)
-        df_padded.fillna(method='bfill', inplace=True)
+        # Используем ffill/bfill для заполнения пропусков в неколичественных столбцах
+        df_padded.ffill(inplace=True)
+        df_padded.bfill(inplace=True)
 
         output_path = os.path.join(PIPELINE_CONFIG['OUTPUT_DIR'], PIPELINE_CONFIG['STEP_2_OUTPUT_FILE'])
         df_padded.to_csv(output_path, index=False, sep=';', decimal=',', encoding='utf-8-sig')
@@ -41,3 +42,4 @@ def run_step_2():
     except Exception as e:
         logger.error(f"Ошибка на Шаге 2: {e}", exc_info=True)
         return False
+

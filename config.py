@@ -4,26 +4,52 @@ from dotenv import load_dotenv
 # Загружаем переменные окружения из файла .env в корне проекта
 load_dotenv()
 
-# --- Настройки подключения к базе данных (загружаются из .env) ---
-DB_CONFIG = {
-    "DRIVER": os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server"),
-    "SERVER": os.getenv("DB_SERVER"),
-    "DATABASE": os.getenv("DB_DATABASE"),
-    "VIEW_NAME": "[dbo].[v_kharyaginskoe_kha_e1_16_1]",
-    "USERNAME": os.getenv("DB_USERNAME"),
-    "PASSWORD": os.getenv("DB_PASSWORD")
-}
+# --- Определяем тип базы данных ---
+DB_TYPE = os.getenv("DB_TYPE", "SQL_SERVER").upper()
+
+# --- Инициализируем словарь для конфигурации ---
+DB_CONFIG = {}
+
+# --- Настройки подключения к базе данных в зависимости от DB_TYPE ---
+if DB_TYPE == "POSTGRES":
+    # Конфигурация для PostgreSQL
+    DB_CONFIG = {
+        "TYPE": "POSTGRES",
+        "HOST": os.getenv("POSTGRES_HOST"),
+        "PORT": os.getenv("POSTGRES_PORT"),
+        "DATABASE": os.getenv("POSTGRES_DB"),
+        "USER": os.getenv("POSTGRES_USER"),
+        "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
+        "VIEW_NAME": os.getenv("POSTGRES_VIEW_NAME")
+         }
+elif DB_TYPE == "SQL_SERVER":
+    # Конфигурация для SQL Server (существующая)
+    DB_CONFIG = {
+        "TYPE": "SQL_SERVER",
+        "DRIVER": os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server"),
+        "SERVER": os.getenv("DB_SERVER"),
+        "DATABASE": os.getenv("DB_DATABASE"),
+        "VIEW_NAME": os.getenv("SQL_SERVER_VIEW_NAME"),
+        "USERNAME": os.getenv("DB_USERNAME"),
+        "PASSWORD": os.getenv("DB_PASSWORD")
+    }
+
+# --- УНИВЕРСАЛЬНЫЕ ПАРАМЕТРЫ ---
+# Добавляем параметры фильтрации в конфигурацию независимо от типа БД
+DB_CONFIG["FILTER_COLUMN_NAME"] = os.getenv("DB_FILTER_COLUMN")
+DB_CONFIG["FILTER_COLUMN_VALUE"] = os.getenv("DB_FILTER_VALUE")
+
 
 # --- Настройки пайплайна ---
 PIPELINE_CONFIG = {
     # Общие
     "OUTPUT_DIR": "output",
     "MODEL_PATH": r"D:\models\checkpoints_k\best_model_kl.pt",
-    "START_PIPELINE_FROM_STEP": 11,  # С какого шага начинать пайплайн (1-12)
+    "START_PIPELINE_FROM_STEP": 1,  # С какого шага начинать пайплайн (1-12)
 
     # Шаг 1: Выгрузка
     "USE_EXISTING_STEP_1_OUTPUT": False,
-    "TOP_N": 350000,
+    "TOP_N": 500000,
     "SORT_COLUMN": "Время_204",
     "ALL_COLUMNS": [
         "Время_204", "Вес_на_крюке_28", "Высота_крюка_103",
@@ -160,9 +186,9 @@ PIPELINE_CONFIG = {
     "STEP_11_WINDOW_STEP": 10,
     # ИЗМЕНЕНИЕ: Замена одного порога на словарь с уровнями
     "STEP_11_ANOMALY_THRESHOLDS": {
-        "low": 4.0,     # Черные точки
-        "medium": 8.0,  # Оранжевые точки
-        "high": 12.0    # Красные точки
+        "low": 4.0,      # Черные точки
+        "medium": 8.0,   # Оранжевые точки
+        "high": 12.0     # Красные точки
     },
     "STEP_11_CONSECUTIVE_ANOMALIES_MIN": 1,
     "STEP_11_EXCLUDE_ANOMALIES_FROM_TRAINING": False,
