@@ -8,7 +8,7 @@ from collections import defaultdict
 from tqdm import tqdm
 from config import PIPELINE_CONFIG
 # ИЗМЕНЕНИЕ: Импортируем наш обработчик БД
-from utils import db_handler
+from utils_pipline import db_handler
 
 from .data_preprocessor import DataPreprocessor, balance_training_data
 from .models import model_factory

@@ -3,7 +3,7 @@ import pandas as pd
 import logging
 from config import PIPELINE_CONFIG
 # ИЗМЕНЕНИЕ: Импортируем наш обработчик БД
-from utils import db_handler
+from utils_pipline import db_handler
 
 logger = logging.getLogger(__name__)
 

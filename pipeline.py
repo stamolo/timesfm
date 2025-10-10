@@ -1,7 +1,7 @@
 import logging
 import os
 from config import PIPELINE_CONFIG
-from utils import db_handler
+from utils_pipline import db_handler
 
 # Импортируем функции для выполнения каждого шага
 from steps.step_1_extraction import run_step_1

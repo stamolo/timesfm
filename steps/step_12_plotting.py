@@ -11,7 +11,7 @@ from matplotlib.lines import Line2D
 import multiprocessing
 import matplotlib.cm as cm
 # ИЗМЕНЕНИЕ: Импортируем наш обработчик БД
-from utils import db_handler
+from utils_pipline import db_handler
 
 # Используем бэкенд, который не требует GUI. Важно для мультипроцессинга.
 matplotlib.use('Agg')
