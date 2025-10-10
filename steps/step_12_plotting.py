@@ -10,6 +10,8 @@ from config import PIPELINE_CONFIG
 from matplotlib.lines import Line2D
 import multiprocessing
 import matplotlib.cm as cm
+# ИЗМЕНЕНИЕ: Импортируем наш обработчик БД
+from utils import db_handler
 
 # Используем бэкенд, который не требует GUI. Важно для мультипроцессинга.
 matplotlib.use('Agg')
@@ -90,11 +92,10 @@ def _generate_plot_for_chunk(args):
         ax2.set_xlabel('Вес на крюке, т', fontsize=12)
         ax2.plot(df_chunk[hookload_col], df_chunk.index, label='Вес на крюке', color=colors.get('hookload'))
         ax2.plot(df_chunk[predicted_hookload_col], df_chunk.index, label='Predicted вес',
-                   color=colors.get('predicted_hookload'))
+                 color=colors.get('predicted_hookload'))
         ax2.plot(df_chunk[avg_hookload_col], df_chunk.index, label='Средний вес по блоку',
-                   color=colors.get('avg_hookload'))
+                 color=colors.get('avg_hookload'))
 
-        # ИЗМЕНЕНИЕ: Отрисовка аномалий с градацией по цвету
         anomalies_low = df_chunk[df_chunk['is_anomaly'] == 1]
         anomalies_medium = df_chunk[df_chunk['is_anomaly'] == 2]
         anomalies_high = df_chunk[df_chunk['is_anomaly'] == 3]
@@ -159,24 +160,17 @@ def _generate_plot_for_chunk(args):
                 contribution_cols = [f'contribution_{f}' for f in feature_cols]
                 intercept_col = 'contribution_intercept'
 
-                # Список столбцов, которые будут отрисованы в цикле (без intercept)
                 plot_loop_cols = contribution_cols
-
-                # Список ВСЕХ столбцов, необходимых для графика
                 all_needed_cols = [intercept_col] + contribution_cols + [predicted_hookload_col]
 
-                # Проверяем, что все нужные столбцы существуют
                 if all(col in df_chunk.columns for col in all_needed_cols):
                     plot_data = df_chunk[all_needed_cols].dropna()
 
                     if not plot_data.empty:
                         y = plot_data.index
-                        # НАЧАЛЬНАЯ ТОЧКА - это значение intercept. График будет строиться "поверх" него.
                         left_boundary = plot_data[intercept_col].values
-
                         plot_colors = cm.get_cmap('viridis', len(plot_loop_cols))
 
-                        # Цикл теперь только по вкладам от признаков
                         for plot_idx, col in enumerate(plot_loop_cols):
                             right_boundary = left_boundary + plot_data[col].values
                             label_name = col.replace('contribution_', '').replace('_', ' ')
@@ -184,14 +178,12 @@ def _generate_plot_for_chunk(args):
                                               label=label_name, color=plot_colors(plot_idx), alpha=0.8)
                             left_boundary = right_boundary
 
-                        # Строим итоговую линию для сверки
                         ax5.plot(plot_data[predicted_hookload_col], y, color='red',
                                  linestyle='--', linewidth=1.5, label='Итог (Predicted)')
 
                         ax5.legend(loc='upper left', fontsize='small')
                         ax5.grid(True, which='both', linestyle='--', linewidth=0.5)
                 else:
-                    # Этот блок остается на случай, если столбцы вклада вообще не были созданы
                     logger.warning(
                         f"График вклада не будет построен для чанка {i + 1}: отсутствуют необходимые столбцы.")
                     ax5.text(0.5, 0.5, 'Нет данных для\nрасчета вклада',
@@ -201,7 +193,6 @@ def _generate_plot_for_chunk(args):
         # --- 4. Общий заголовок и сохранение ---
         date_str = start_chunk_time.strftime('%Y-%m-%d')
         time_interval_str = f"{start_chunk_time.strftime('%H-%M')} - {end_chunk_time.strftime('%H-%M')}"
-        # Заменяем символ '|' на запятую для большей надежности при сохранении
         title_text = f'Комплексный анализ буровых параметров (Часть {i + 1}/{total_chunks})\nДата: {date_str}, Время: {time_interval_str}'
         fig.suptitle(title_text, fontsize=16)
 
@@ -220,23 +211,26 @@ def _generate_plot_for_chunk(args):
 
 def run_step_12():
     """
-    Шаг 12: Построение комплексных графиков для визуального анализа с использованием
-    параллельной обработки для ускорения.
+    Шаг 12: Построение комплексных графиков из данных в БД.
     """
     logger.info("---[ Шаг 12: Построение итоговых графиков (параллельный режим) ]---")
     try:
-        # --- 1. Загрузка данных и параметров ---
-        input_path = os.path.join(PIPELINE_CONFIG['OUTPUT_DIR'], PIPELINE_CONFIG['STEP_12_INPUT_FILE'])
-        if not os.path.exists(input_path):
-            logger.error(f"Файл {input_path} не найден. Запустите Шаг 11.")
+        # --- ИЗМЕНЕНИЕ: Загрузка данных из VIEW в БД ---
+        object_name = db_handler.get_target_object_name()
+        view_name = f"{object_name}_results"
+        try:
+            df = db_handler.read_data_from_db(table_or_view_name=view_name)
+        except Exception as e:
+            logger.error(f"Не удалось загрузить данные из представления '{view_name}'. "
+                         f"Убедитесь, что Шаг 11 был успешно выполнен. Ошибка: {e}")
             return False
-
-        df = pd.read_csv(input_path, sep=';', decimal=',', encoding='utf-8')
-        logger.info(f"Загружен файл {input_path}, содержащий {len(df)} строк.")
+        # -----------------------------------------------
 
         # --- 2. Предварительная обработка данных ---
         time_col = PIPELINE_CONFIG.get('SORT_COLUMN')
-        df[time_col] = pd.to_datetime(df[time_col].astype(str).str.replace(',', '.'))
+        # Преобразование времени происходит при чтении, но проверим
+        if not pd.api.types.is_datetime64_any_dtype(df[time_col]):
+            df[time_col] = pd.to_datetime(df[time_col])
         df.set_index(time_col, inplace=True)
 
         plot_settings = PIPELINE_CONFIG.get('STEP_12_PLOT_SETTINGS', {})
@@ -253,13 +247,14 @@ def run_step_12():
                 r_upper = df[rpm_col].quantile(percentile / 100.0)
                 rpm_limits = (-5, r_upper * 1.05)
 
-        # --- 3. Разбивка на временные интервалы ---
+        # --- Остальная часть функции (разбивка, запуск пула) без изменений ---
+        # 3. Разбивка на временные интервалы
         chunk_minutes = PIPELINE_CONFIG.get('STEP_12_CHUNK_MINUTES', 120)
         start_time = df.index.min().floor('h')
         end_time = df.index.max().ceil('h')
         time_chunks = pd.date_range(start=start_time, end=end_time, freq=f'{chunk_minutes}min')
 
-        # --- 4. Подготовка задач для параллельной обработки ---
+        # 4. Подготовка задач
         tasks = []
         base_plot_filename = PIPELINE_CONFIG.get('STEP_12_PLOT_FILE_PREFIX', 'plot')
         total_chunks = len(time_chunks) - 1
@@ -272,7 +267,6 @@ def run_step_12():
         for i in range(total_chunks):
             start_chunk_time = time_chunks[i]
             end_chunk_time = time_chunks[i + 1]
-
             task_args = (
                 i, total_chunks, start_chunk_time, end_chunk_time,
                 plot_settings, base_plot_filename, PIPELINE_CONFIG['OUTPUT_DIR'],
@@ -282,13 +276,14 @@ def run_step_12():
             tasks.append(task_args)
         logger.info(f"Подготовлено {len(tasks)} задач.")
 
-        # --- 5. Параллельное создание графиков ---
+        # 5. Параллельное создание
         num_processes = min(multiprocessing.cpu_count() - 1, len(tasks), 8)
+        if num_processes < 1: num_processes = 1
         logger.info(f"Запуск параллельной генерации {len(tasks)} графиков на {num_processes} процессах...")
         with multiprocessing.Pool(processes=num_processes, initializer=init_worker, initargs=(df,)) as pool:
             results = list(tqdm(pool.imap(_generate_plot_for_chunk, tasks), total=len(tasks), desc="Создание графиков"))
 
-        # --- 6. Сбор информации о пропущенных интервалах ---
+        # 6. Сбор информации
         skipped_chunks = [res for res in results if res is not None]
         if skipped_chunks:
             report_df = pd.DataFrame(skipped_chunks)
@@ -302,4 +297,3 @@ def run_step_12():
     except Exception as e:
         logger.error(f"Критическая ошибка на Шаге 12: {e}", exc_info=True)
         return False
-

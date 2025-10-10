@@ -2,19 +2,26 @@ import os
 import pandas as pd
 import logging
 from config import PIPELINE_CONFIG
+# ИЗМЕНЕНИЕ: Импортируем наш обработчик БД
+from utils import db_handler
 
 logger = logging.getLogger(__name__)
 
 
 def run_step_10():
     """
-    Шаг 10: Расчет параметра 'Над забоем, м' и его бинарной версии.
-    'Над забоем, м' = 'Глубина_забоя_36' - 'Глубина_долота_35'.
-    Бинарная версия = 1 если 'Над забоем, м' > порога, иначе 0.
+    Шаг 10: Расчет параметра 'Над забоем, м', его бинарной версии
+    и ЗАПИСЬ РЕЗУЛЬТАТА В ГИПЕРТАБЛИЦУ POSTGRESQL.
     """
-    logger.info("---[ Шаг 10: Расчет параметра 'Над забоем, м' и его бинарной версии ]---")
+    logger.info("---[ Шаг 10: Расчет параметра 'Над забоем, м' и запись в БД ]---")
     try:
-        # 1. Загрузка данных из предыдущего шага
+        # --- ИЗМЕНЕНИЕ: Логика очистки БД ---
+        start_step = PIPELINE_CONFIG.get("START_PIPELINE_FROM_STEP", 1)
+        if start_step <= 10:
+            db_handler.cleanup_object_artifacts()
+        # -------------------------------------
+
+        # 1. Загрузка данных из предыдущего шага (остается как есть)
         step_9_path = os.path.join(PIPELINE_CONFIG['OUTPUT_DIR'], PIPELINE_CONFIG['STEP_9_OUTPUT_FILE'])
         if not os.path.exists(step_9_path):
             logger.error(f"Файл {step_9_path} не найден. Запустите Шаг 9.")
@@ -45,24 +52,29 @@ def run_step_10():
         if calculate_binary:
             threshold = PIPELINE_CONFIG.get('STEP_10_BINARY_THRESHOLD', 35.0)
             binary_output_col = PIPELINE_CONFIG.get('STEP_10_BINARY_OUTPUT_COLUMN', 'Над забоем, м (бинарный)')
-
             logger.info(f"Расчет бинарного параметра '{binary_output_col}' с порогом > {threshold}.")
-
-            # (df[output_col] > threshold) вернет True/False. .astype(int) преобразует в 1/0.
             df[binary_output_col] = (df[output_col] > threshold).astype(int)
             logger.info(f"Бинарный параметр успешно рассчитан.")
         else:
             logger.info("Расчет бинарной версии параметра пропущен (отключен в конфиге).")
 
-        # 5. Сохранение результата
-        output_filename = PIPELINE_CONFIG['STEP_10_OUTPUT_FILE']
-        output_path = os.path.join(PIPELINE_CONFIG['OUTPUT_DIR'], output_filename)
-        df.to_csv(output_path, index=False, sep=';', decimal=',', encoding='utf-8-sig')
-        logger.info(f"Итоговый датасет с новыми параметрами сохранен в: {output_path}")
+        # --- ИЗМЕНЕНИЕ: Сохранение результата в БД вместо CSV ---
+        # 5. Сохранение результата в гипертаблицу
+        time_col = PIPELINE_CONFIG['SORT_COLUMN']
+        # Убедимся, что временная колонка имеет правильный формат
+        df[time_col] = pd.to_datetime(df[time_col].astype(str).str.replace(',', '.'))
+
+        db_handler.write_df_to_hypertable(df, time_column=time_col)
+        # --------------------------------------------------------
+
+        # Сохранение в CSV можно оставить для отладки, но закомментировать
+        # output_filename = PIPELINE_CONFIG['STEP_10_OUTPUT_FILE']
+        # output_path = os.path.join(PIPELINE_CONFIG['OUTPUT_DIR'], output_filename)
+        # df.to_csv(output_path, index=False, sep=';', decimal=',', encoding='utf-8-sig')
+        # logger.info(f"Отладочный датасет сохранен в: {output_path}")
 
         return True
 
     except Exception as e:
         logger.error(f"Ошибка на Шаге 10: {e}", exc_info=True)
         return False
-

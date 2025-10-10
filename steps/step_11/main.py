@@ -7,6 +7,8 @@ import json
 from collections import defaultdict
 from tqdm import tqdm
 from config import PIPELINE_CONFIG
+# ИЗМЕНЕНИЕ: Импортируем наш обработчик БД
+from utils import db_handler
 
 from .data_preprocessor import DataPreprocessor, balance_training_data
 from .models import model_factory
@@ -35,13 +37,11 @@ class TimeTracker:
     def report(self):
         """Выводит итоговый отчет в лог."""
         logger.info("---[ Отчет по времени выполнения Шага 11 ]---")
-        # Считаем общее время только по задачам, которые были запущены
         total_time = sum(self.totals.values())
         if total_time == 0:
             logger.info("Нет данных для отчета.")
             return
 
-        # Сортируем задачи по имени для консистентного вывода
         for name, duration in sorted(self.totals.items()):
             percentage = (duration / total_time) * 100
             logger.info(f"- {name:<40}: {duration:>7.2f} сек ({percentage:>5.1f}%)")
@@ -53,12 +53,6 @@ class TimeTracker:
 def find_max_continuous_travel(travel_diffs):
     """
     Находит максимальное непрерывное движение вверх и вниз в серии данных.
-
-    Args:
-        travel_diffs (pd.Series): Серия с разницами (изменениями) высоты/глубины.
-
-    Returns:
-        tuple: (max_up_travel, max_down_travel)
     """
     max_up_travel = 0
     max_down_travel = 0
@@ -68,16 +62,10 @@ def find_max_continuous_travel(travel_diffs):
     for diff in travel_diffs.dropna():
         if diff > 0:
             current_up_travel += diff
-            # Если началось движение вверх, сбрасываем счетчик движения вниз
             current_down_travel = 0
         elif diff < 0:
             current_down_travel += abs(diff)
-            # Если началось движение вниз, сбрасываем счетчик движения вверх
             current_up_travel = 0
-        # Если diff == 0, непрерывное движение прервалось.
-        # В этом случае мы обновляем максимумы, но не сбрасываем текущие значения,
-        # так как следующая точка может продолжить движение.
-        # Однако, для строго непрерывного движения, можно добавить else: current_up/down_travel = 0
 
         max_up_travel = max(max_up_travel, current_up_travel)
         max_down_travel = max(max_down_travel, current_down_travel)
@@ -91,18 +79,23 @@ def run_step_11():
     (ОРКЕСТРАТОР)
     """
     logger.info("---[ Шаг 11: Поиск аномалий (декомпозированная версия) ]---")
-
-    # Инициализируем трекер времени
     tracker = TimeTracker()
 
     try:
-        # 1. Загрузка данных и параметров
-        tracker.start('1. Загрузка и фильтрация данных')
-        step_10_path = os.path.join(PIPELINE_CONFIG['OUTPUT_DIR'], PIPELINE_CONFIG['STEP_10_OUTPUT_FILE'])
-        df = pd.read_csv(step_10_path, sep=';', decimal=',', encoding='utf-8')
-        logger.info(f"Загружен файл {step_10_path}, содержащий {len(df)} строк.")
+        # --- ИЗМЕНЕНИЕ: Логика очистки артефактов этого шага ---
+        start_step = PIPELINE_CONFIG.get("START_PIPELINE_FROM_STEP", 1)
+        if start_step == 11:
+            db_handler.cleanup_step_artifacts(step_number=11)
+        # ----------------------------------------------------
 
-        # --- ПАРАМЕТРЫ ---
+        # --- ИЗМЕНЕНИЕ: Загрузка данных из БД ---
+        tracker.start('1. Загрузка и фильтрация данных из БД')
+        object_name = db_handler.get_target_object_name()
+        df = db_handler.read_data_from_db(table_or_view_name=object_name)
+        logger.info(f"Загружены данные для объекта '{object_name}', содержащие {len(df)} строк.")
+        # ----------------------------------------
+
+        # --- ПАРАМЕТРЫ (без изменений) ---
         model_type = PIPELINE_CONFIG.get('STEP_11_MODEL_TYPE', 'linear').lower()
         if model_type == 'neural_network':
             model_params = PIPELINE_CONFIG.get('STEP_11_NN_PARAMS', {})
@@ -112,8 +105,7 @@ def run_step_11():
         fit_intercept_option = PIPELINE_CONFIG.get('STEP_11_MODEL_FIT_INTERCEPT', True)
         continuous_training = PIPELINE_CONFIG.get('STEP_11_CONTINUOUS_TRAINING', False)
         if continuous_training:
-            logger.info(
-                "Включен режим непрерывного обучения (warm start). Модель будет дообучаться, а не создаваться заново.")
+            logger.info("Включен режим непрерывного обучения (warm start).")
         target_col = PIPELINE_CONFIG['STEP_11_TARGET_COLUMN']
         feature_cols = PIPELINE_CONFIG['STEP_11_FEATURE_COLUMNS']
         slips_col = PIPELINE_CONFIG['STEP_11_SLIPS_COLUMN']
@@ -121,12 +113,14 @@ def run_step_11():
         min_window_size = PIPELINE_CONFIG['STEP_11_MIN_WINDOW_SIZE']
         max_window_size = PIPELINE_CONFIG['STEP_11_MAX_WINDOW_SIZE']
         window_step = PIPELINE_CONFIG.get('STEP_11_WINDOW_STEP', 1)
-        # ИЗМЕНЕНИЕ: Загружаем словарь порогов вместо одного значения
         anomaly_thresholds = PIPELINE_CONFIG.get('STEP_11_ANOMALY_THRESHOLDS', {'low': 4.0})
         logger.info(f"Используются пороги для аномалий: {anomaly_thresholds}")
         min_consecutive = PIPELINE_CONFIG.get('STEP_11_CONSECUTIVE_ANOMALIES_MIN', 1)
         time_col = PIPELINE_CONFIG.get('SORT_COLUMN')
-        df[time_col] = pd.to_datetime(df[time_col].str.replace(',', '.'))
+        # Преобразование времени происходит при чтении из БД, но проверим
+        if not pd.api.types.is_datetime64_any_dtype(df[time_col]):
+            df[time_col] = pd.to_datetime(df[time_col].astype(str).str.replace(',', '.'))
+
         time_gap_minutes = PIPELINE_CONFIG.get('STEP_11_TIME_GAP_THRESHOLD_MINUTES', 15)
         hook_height_col = PIPELINE_CONFIG.get('STEP_9_HOOK_HEIGHT_COLUMN')
         min_travel = PIPELINE_CONFIG.get('STEP_11_MIN_CONTINUOUS_TRAVEL', 3.0)
@@ -174,16 +168,16 @@ def run_step_11():
         # 3. Инициализация столбцов
         df['predicted_weight'] = np.nan
         df['residual'] = np.nan
-        # is_anomaly будет хранить уровень: 0=нет, 1=низкий, 2=средний, 3=высокий
         df['is_anomaly'] = 0
         df[training_flag_col] = 0
         contribution_cols = [f'contribution_{f}' for f in feature_cols]
         intercept_col_name = 'contribution_intercept'
         for col in contribution_cols + [intercept_col_name]:
             df[col] = np.nan
-        tracker.stop('1. Загрузка и фильтрация данных')
+        tracker.stop('1. Загрузка и фильтрация данных из БД')
 
-        # 4. --- ИНИЦИАЛИЗАЦИЯ ИЛИ ЗАГРУЗКА МОДЕЛИ (ПЕРЕД ОСНОВНЫМ ЦИКЛОМ) ---
+        # 4. Инициализация или загрузка модели (без изменений)
+        # ... (код инициализации модели оставлен без изменений)
         model_wrapper = None
         preprocessor = None
         interpreter = None
@@ -207,29 +201,27 @@ def run_step_11():
                     is_model_fitted = True
                     interpreter = interpreter_factory(model_wrapper)
                     logger.info("Модель и препроцессор успешно загружены.")
-                else:  # Если препроцессор не загрузился
+                else:
                     is_model_fitted = False
                     logger.warning("Не удалось загрузить препроцессор, модель будет обучаться с нуля.")
             else:
                 logger.warning("Файлы модели и/или препроцессора не найдены. Модель будет обучаться с нуля.")
 
-        # Если модель не была загружена, инициализируем ее
         if not is_model_fitted:
             model_wrapper = model_factory(model_type, model_params, fit_intercept_option, input_dim=len(feature_cols))
             interpreter = interpreter_factory(model_wrapper)
             preprocessor = DataPreprocessor(normalization_type)
 
         last_training_time = None
-        # --- КОНЕЦ БЛОКА ИНИЦИАЛИЗАЦИИ/ЗАГРУЗКИ ---
 
-        # 5. Основной цикл
+        # 5. Основной цикл (без изменений в логике)
+        # ... (весь цикл `for block_num, block_df...` и `for i in tqdm...` остается без изменений)
         total_blocks = len(data_blocks)
         for block_num, block_df in enumerate(data_blocks, 1):
             if len(block_df) < min_window_size:
                 continue
             logger.info(f"Обработка блока #{block_num}/{total_blocks}, размер: {len(block_df)} точек.")
 
-            # Локальные переменные для блока (состояние аномалий)
             block_df.loc[:, 'predicted_weight'] = np.nan
             block_df.loc[:, 'residual'] = np.nan
             block_df.loc[:, 'is_anomaly'] = 0
@@ -287,7 +279,7 @@ def run_step_11():
                                 logger.info(
                                     f"Ошибка MAE ({error:.2f}) на последнем блоке > порога ({retraining_error_threshold}). Запуск переобучения.")
                                 should_retrain = True
-                    else:  # Если retraining по ошибке выключен, но модель обучена - переобучаем всегда
+                    else:
                         should_retrain = True
 
                 if should_retrain:
@@ -362,15 +354,10 @@ def run_step_11():
                 block_df.loc[analysis_block.index, 'predicted_weight'] = predictions
                 block_df.loc[analysis_block.index, 'residual'] = residuals
 
-                # ИЗМЕНЕНИЕ: Логика определения уровня аномалий
-                # Сначала определяем последовательности по самому низкому порогу, затем присваиваем уровень.
                 thresh_low = anomaly_thresholds.get('low', 4.0)
-
-                # Проверяем, есть ли хоть одна аномалия (любого уровня) в текущем шаге
                 potential_anomalies_mask = abs(residuals) > thresh_low
 
                 if potential_anomalies_mask.any():
-                    # Маска для ВСЕГО блока, определяющая, где есть аномалия ЛЮБОГО уровня
                     potential_mask_in_block = abs(block_df['residual']) > thresh_low
                     grouper = potential_mask_in_block.diff().ne(0).cumsum()
                     anomaly_group_ids = grouper[potential_mask_in_block]
@@ -380,27 +367,22 @@ def run_step_11():
                         actual_anomaly_indices = block_sizes[block_sizes >= min_consecutive].index
 
                         if not actual_anomaly_indices.empty:
-                            # Теперь, когда у нас есть ИНДЕКСЫ подтвержденных аномалий,
-                            # мы определим их УРОВЕНЬ
                             thresh_med = anomaly_thresholds.get('medium', 8.0)
                             thresh_high = anomaly_thresholds.get('high', 12.0)
-
-                            # Берем значения отклонений для подтвержденных аномалий
                             confirmed_residuals = abs(df.loc[actual_anomaly_indices, 'residual'])
 
-                            # Создаем серию для уровней аномалий
                             anomaly_levels = pd.Series(0, index=actual_anomaly_indices, dtype=int)
                             anomaly_levels[confirmed_residuals >= thresh_high] = 3
                             anomaly_levels[
                                 (confirmed_residuals >= thresh_med) & (confirmed_residuals < thresh_high)] = 2
                             anomaly_levels[(confirmed_residuals >= thresh_low) & (confirmed_residuals < thresh_med)] = 1
 
-                            # Присваиваем уровни в оба датафрейма
                             df.loc[actual_anomaly_indices, 'is_anomaly'] = anomaly_levels
                             block_df.loc[actual_anomaly_indices, 'is_anomaly'] = anomaly_levels
                 tracker.stop('5. Пост-обработка и поиск аномалий')
 
-        # --- 6. СОХРАНЕНИЕ МОДЕЛИ И КОНФИГА (ПОСЛЕ ВСЕХ БЛОКОВ) ---
+        # 6. Сохранение модели (без изменений)
+        # ... (код сохранения модели оставлен без изменений)
         save_enabled = PIPELINE_CONFIG.get('STEP_11_SAVE_MODEL_ENABLED', False)
         if save_enabled and is_model_fitted:
             logger.info("Сохранение итоговой модели, препроцессора и конфигурации...")
@@ -415,13 +397,10 @@ def run_step_11():
             preprocessor_path = os.path.join(save_dir, preprocessor_filename)
             config_path = os.path.join(save_dir, config_filename)
 
-            # Сохраняем модель и препроцессор
             model_wrapper.save(model_path)
             preprocessor.save(preprocessor_path)
 
-            # Сохраняем конфигурацию
             try:
-                # Создаем копию конфига для сериализации
                 config_to_save = PIPELINE_CONFIG.copy()
                 with open(config_path, 'w', encoding='utf-8') as f:
                     json.dump(config_to_save, f, ensure_ascii=False, indent=4)
@@ -432,15 +411,30 @@ def run_step_11():
         elif save_enabled and not is_model_fitted:
             logger.warning("Сохранение модели пропущено, так как модель не была обучена.")
 
-        # --- КОНЕЦ БЛОКА СОХРАНЕНИЯ ---
-
-        # ИЗМЕНЕНИЕ: Считаем все точки, где уровень аномалии > 0
+        # --- ИЗМЕНЕНИЕ: Сохранение результатов в отдельную таблицу и создание VIEW ---
         total_anomalies = (df['is_anomaly'] > 0).sum()
         logger.info(f"Найдено {total_anomalies} итоговых аномальных точек.")
-        output_filename = PIPELINE_CONFIG['STEP_11_OUTPUT_FILE']
-        output_path = os.path.join(PIPELINE_CONFIG['OUTPUT_DIR'], output_filename)
-        df.to_csv(output_path, index=False, sep=';', decimal=',', encoding='utf-8-sig')
-        logger.info(f"Итоговый датасет сохранен в: {output_path}")
+
+        # 7.1. Выделяем только новые, рассчитанные на этом шаге, столбцы
+        calculated_cols = [
+                              'predicted_weight', 'residual', 'is_anomaly', training_flag_col
+                          ] + contribution_cols + [intercept_col_name]
+
+        # Убедимся, что временная колонка - это индекс для сохранения
+        df.set_index(time_col, inplace=True)
+
+        # Выбираем только те строки, где есть хоть какие-то расчеты
+        results_df = df[calculated_cols].dropna(how='all')
+
+        if not results_df.empty:
+            # 7.2. Сохраняем эти столбцы в свою таблицу
+            db_handler.write_df_to_table(results_df, table_name="step11")
+
+            # 7.3. Создаем/обновляем VIEW для объединения
+            db_handler.create_or_replace_results_view()
+        else:
+            logger.warning("Нет данных для записи в таблицу результатов Шага 11.")
+        # --------------------------------------------------------------------------
 
         tracker.report()
         return True
@@ -449,4 +443,3 @@ def run_step_11():
         logger.error(f"Ошибка на Шаге 11: {e}", exc_info=True)
         tracker.report()
         return False
-

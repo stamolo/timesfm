@@ -21,7 +21,7 @@ if DB_TYPE == "POSTGRES":
         "USER": os.getenv("POSTGRES_USER"),
         "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
         "VIEW_NAME": os.getenv("POSTGRES_VIEW_NAME")
-         }
+       }
 elif DB_TYPE == "SQL_SERVER":
     # Конфигурация для SQL Server (существующая)
     DB_CONFIG = {
@@ -45,11 +45,14 @@ PIPELINE_CONFIG = {
     # Общие
     "OUTPUT_DIR": "output",
     "MODEL_PATH": r"D:\models\checkpoints_k\best_model_kl.pt",
-    "START_PIPELINE_FROM_STEP": 1,  # С какого шага начинать пайплайн (1-12)
+    "START_PIPELINE_FROM_STEP": 1, # С какого шага начинать пайплайн (1-12)
+
+    # --- НОВЫЙ ПАРАМЕТР ДЛЯ СХЕМЫ В PG ---
+    "NSR_SCHEMA": "nsr",
 
     # Шаг 1: Выгрузка
     "USE_EXISTING_STEP_1_OUTPUT": False,
-    "TOP_N": 15000000,
+    "TOP_N": 600000,
     "SORT_COLUMN": "Время_204",
     "ALL_COLUMNS": [
         "Время_204", "Вес_на_крюке_28", "Высота_крюка_103",
@@ -123,7 +126,7 @@ PIPELINE_CONFIG = {
     "STEP_10_CALCULATE_BINARY": True,
     "STEP_10_BINARY_THRESHOLD": 35.0,
     "STEP_10_BINARY_OUTPUT_COLUMN": "Над забоем, м (бинарный)",
-    "STEP_10_OUTPUT_FILE": "step_10_final_dataset.csv",
+    "STEP_10_OUTPUT_FILE": "step_10_final_dataset.csv", # ОСТАВЛЯЕМ ДЛЯ ОБРАТНОЙ СОВМЕСТИМОСТИ, НО ИСПОЛЬЗОВАТЬСЯ НЕ БУДЕТ
 
     # Шаг 11: Поиск аномалий веса
     # --- НОВЫЕ ПАРАМЕТРЫ ДЛЯ СОХРАНЕНИЯ/ЗАГРУЗКИ МОДЕЛИ ---
@@ -135,7 +138,7 @@ PIPELINE_CONFIG = {
     "STEP_11_CONFIG_FILENAME": "pipeline_config.json", # Имя файла для конфига
     # ---------------------------------------------------
     "STEP_11_CONTINUOUS_TRAINING": True,
-    "STEP_11_MODEL_FIT_INTERCEPT": False,
+    "STEP_11_MODEL_FIT_INTERCEPT": True,
     "STEP_11_NORMALIZATION_TYPE": "z_score",  # Варианты: "none", "min_max", "z_score"
     "STEP_11_MODEL_TYPE": "lasso",  # Варианты: "linear", "ridge", "lasso", "elasticnet", "neural_network"
 
@@ -208,10 +211,10 @@ PIPELINE_CONFIG = {
     "STEP_11_BALANCING_COLUMN": "Скорость_инструмента",
     "STEP_11_BALANCING_MAX_STATIONARY_PERCENT": 15,
     "STEP_11_TRAINING_FLAG_COLUMN": "Модель_обучалась_флаг",
-    "STEP_11_OUTPUT_FILE": "step_11_anomaly_detection.csv",
+    "STEP_11_OUTPUT_FILE": "step_11_anomaly_detection.csv", # ОСТАВЛЯЕМ ДЛЯ ОБРАТНОЙ СОВМЕСТИМОСТИ
 
     # Шаг 12: Построение итоговых графиков
-    "STEP_12_INPUT_FILE": "step_11_anomaly_detection.csv",
+    "STEP_12_INPUT_FILE": "step_11_anomaly_detection.csv", # НЕ ИСПОЛЬЗУЕТСЯ, Т.К. ДАННЫЕ БЕРУТСЯ ИЗ БД
     "STEP_12_PLOT_FILE_PREFIX": "step_12_anomaly_plot",
     "STEP_12_CHUNK_MINUTES": 60,
     "STEP_12_SHOW_CONTRIBUTION_PLOT": True,
@@ -245,4 +248,3 @@ PIPELINE_CONFIG = {
         "anomaly_marker_alpha": 0.7
     }
 }
-

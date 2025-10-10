@@ -11,7 +11,7 @@ from typing import Iterable, Set
 # «Белый» список исключений: показываем в структуре, но не заходим внутрь и не включаем в контент
 DEFAULT_EXCLUDES: Set[str] = {
 
-    '.env',
+    #'.env',
     'output'
 
 
@@ -30,9 +30,9 @@ DEFAULT_BLACKLIST: Set[str] = {
      'pred_web.py', 'test.py', 'train_web.py',
      'utils', 'main_1.py', 'pred256_3.py',
 
-    'step_1_extraction.py',
-    'step_2_padding.py', 'step_3_prediction.py', 'step_4_remapping.py', 'step_5_tool_depth.py', 'step_6_block_average.py',
-    'step_7_advanced_reset.py', 'step_8_bottom_hole_depth.py', 'step_9_derivatives.py',
+    #'step_1_extraction.py',
+    #'step_2_padding.py', 'step_3_prediction.py', 'step_4_remapping.py', 'step_5_tool_depth.py', 'step_6_block_average.py',
+    #'step_7_advanced_reset.py', 'step_8_bottom_hole_depth.py', 'step_9_derivatives.py',
     #'step_10_above_bottom_hole.py',
     #'step_11_anomaly_detection.py',
     #'step_12_plotting.py'
